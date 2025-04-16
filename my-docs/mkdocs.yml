@@ -1,0 +1,21 @@
+site_name: IPNI
+
+nav:
+  - Home: index.md 
+  - Getting Started: getstarted.md
+  - database : database.md
+  - api_reference : api_reference.md
+  - docker and php : docker_php.md
+  - troubleshooting : troubleshooting.md
+  - Data description: data_description.md
+  
+theme:
+  name: material
+  palette:
+    scheme: default
+  features:
+    - navigation.tabs
+    - navigation.instant
+    - navigation.sections
+    - search.suggest
+    - search.highlight

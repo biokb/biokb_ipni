@@ -1,0 +1,7 @@
+col:ID	col:nameID	col:citation	col:status	col:institutionCode	col:catalogNumber	col:collector	col:date	col:locality	col:latitude	col:longitude	col:remarks
+	1-1	citation_1	status_1	institution_code_1	catalog_number_1	collector_1	1970-1-1	locality_1	1.1	1.1	remarks_1
+	1-1	citation_2	status_2	institution_code_2	catalog_number_2	collector_2	1970-1-2	locality_2	2.2	2.2	remarks_2
+	1-1	citation_3	status_3	institution_code_3	catalog_number_3	collector_3	1970-1-3	locality_3	3.3	3.3	remarks_3
+	2-1	citation_4	status_4	institution_code_4	catalog_number_4	collector_4	1970-1-4	locality_4	4.4	4.4	remarks_4
+	2-1	citation_5	status_5	institution_code_5	catalog_number_5	collector_5	1970-1-5	locality_5	5.5	5.5	remarks_5
+	3-1	citation_6	status_6	institution_code_6	catalog_number_6	collector_6	1970-1-6	locality_6	6.6	6.6	remarks_6

@@ -1,0 +1,40 @@
+[project]
+name = "ipni"
+version = "0.1.0"
+description = "ipni"
+authors = [
+    {name = "Christian Ebeling", email = "Christian.Ebeling@scai.fraunhofer.de"},
+]
+dependencies = [
+    "pandas>=2.2.3",
+    "sqlalchemy>=2.0.38",
+    "pymysql>=1.1.1",
+    "fastapi>=0.115.8",
+    "cryptography>=41.0.0",
+    "pydantic>=2.10.6",
+    "fastapi[standard]>=0.115.8",
+    "click>=8.1.8",
+]
+requires-python = ">=3.12"
+readme = "README.md"
+license = {text = "MIT"}
+
+[tool.pdm]
+distribution = true
+
+[dependency-groups]
+tests = ["pytest>=8.3.4",]
+dev = [
+    "podman-compose>=1.2.0",
+    "pdm>=2.22.4",
+]
+docs = [
+    "mkdocs-material>=9.6.7",
+]
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+[project.scripts]
+ipni = "ipni.cli:main"

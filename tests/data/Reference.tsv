@@ -1,0 +1,5 @@
+col:ID	col:doi	col:alternativeID	col:citation	col:title	col:author	col:issued	col:volume	col:issue	col:page	col:issn	col:isbn	col:link	col:remarks
+1-1$v1	doi_1	alternative_id_1	citation_1	title_1	author_1	issued_1	volume_1	issue_1	page_1	issn_1	isbn_1	link_1	remarks_1
+2-1$v2	doi_2	alternative_id_2	citation_2	title_2	author_2	issued_2	volume_2	issue_2	page_2	issn_2	isbn_2	link_2	remarks_2
+3-1$v3	doi_3	alternative_id_3	citation_3	title_3	author_3	issued_3	volume_3	issue_3	page_3	issn_3	isbn_3	link_3	remarks_3
+4-1$v4	doi_4	alternative_id_4	citation_4	title_4	author_4	issued_4	volume_4	issue_4	page_4	issn_4	isbn_4	link_4	remarks_4
