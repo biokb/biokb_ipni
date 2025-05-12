@@ -1,5 +1,5 @@
 [project]
-name = "ipni"
+name = "biokb_ipni"
 version = "0.1.0"
 description = "ipni"
 authors = [
@@ -37,4 +37,4 @@ requires = ["pdm-backend"]
 build-backend = "pdm.backend"
 
 [project.scripts]
-ipni = "ipni.cli:main"
+biokb_ipni = "ipni.cli:main"
