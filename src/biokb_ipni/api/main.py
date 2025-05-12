@@ -9,11 +9,11 @@ from sqlalchemy.orm import Session
 # from database import SessionLocal
 from sqlalchemy.sql import text
 
-from ipni.api import schemas
-from ipni.api.tags import Tag
-from ipni.constants import DB_DEFAULT_CONNECTION_STR
-from ipni.db import models
-from ipni.db.manager import DbManager
+from biokb_ipni.api import schemas
+from biokb_ipni.api.tags import Tag
+from biokb_ipni.constants import DB_DEFAULT_CONNECTION_STR
+from biokb_ipni.db import models
+from biokb_ipni.db.manager import DbManager
 
 # 1) Configure Database
 SQLALCHEMY_DATABASE_URL = os.getenv("CONNECTION_STR", DB_DEFAULT_CONNECTION_STR)

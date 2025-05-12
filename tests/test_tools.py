@@ -1,6 +1,6 @@
 import pandas as pd
 
-from ipni.tools import (
+from biokb_ipni.tools import (
     clean_if_string,
     get_cleaned_and_standardized_dataframe,
     get_standard_column_name,

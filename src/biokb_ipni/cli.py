@@ -1,7 +1,7 @@
 import click
 from sqlalchemy import create_engine
 
-from ipni.db.manager import DbManager
+from biokb_ipni.db.manager import DbManager
 
 
 # we are creating a group

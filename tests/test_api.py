@@ -5,8 +5,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from ipni.api.main import app, get_db
-from ipni.db.manager import DbManager
+from biokb_ipni.api.main import app, get_db
+from biokb_ipni.db.manager import DbManager
 
 # Create a new test database engine (SQLite in-memory for testing)
 test_engine = create_engine("sqlite:///tests/db/test.db")

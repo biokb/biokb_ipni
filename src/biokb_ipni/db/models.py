@@ -4,7 +4,7 @@ from typing import Optional
 from sqlalchemy import Date, ForeignKey, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from ipni.constants import PROJECT_NAME
+from biokb_ipni.constants import PROJECT_NAME
 
 # TODO: Analyse if datatypes are OK
 

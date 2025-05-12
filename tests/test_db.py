@@ -2,8 +2,8 @@ import pandas as pd
 import pytest
 from sqlalchemy import create_engine
 
-from ipni.db import models
-from ipni.db.manager import DbManager
+from biokb_ipni.db import models
+from biokb_ipni.db.manager import DbManager
 
 
 @pytest.fixture

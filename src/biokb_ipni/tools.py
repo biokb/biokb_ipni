@@ -12,7 +12,7 @@ import datetime
 
 import pandas as pd
 
-from ipni.constants import (
+from biokb_ipni.constants import (
     DATA_FOLDER,
     DEFAULT_PATH_UNZIPPED_DATA_FOLDER,
     DOWNLOAD_URL,

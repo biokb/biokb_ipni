@@ -7,13 +7,20 @@ import pandas as pd
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import sessionmaker
 
-from ipni.constants import (
+from biokb_ipni.constants import (
     DB_DEFAULT_CONNECTION_STR,
     DEFAULT_PATH_UNZIPPED_DATA_FOLDER,
     TsvFileName,
 )
-from ipni.db.models import Base, Name, NameRelation, Reference, Taxon, TypeMaterial
-from ipni.tools import (
+from biokb_ipni.db.models import (
+    Base,
+    Name,
+    NameRelation,
+    Reference,
+    Taxon,
+    TypeMaterial,
+)
+from biokb_ipni.tools import (
     download_and_unzip,
     get_cleaned_and_standardized_dataframe,
     parse_date,
