@@ -1,6 +1,7 @@
 import logging
 import os
 import shutil
+from codecs import ignore_errors
 from typing import Any
 
 import pandas as pd
@@ -80,7 +81,9 @@ class DbManager:
         self.create_db()
         logger.info("Database recreated.")
 
-    def import_data(self):
+    def import_data(self) -> dict[str, int]:
+        self.create_db()
+        imported = {}
         if not self.path_data_folder:
             self.path_data_folder = download_and_unzip(self.force_download)
 
@@ -88,14 +91,31 @@ class DbManager:
 
         for tsv_file, model in file_table_map.items():
             logger.info(f"Start import into {model.__tablename__}")
-            self.import_model_data(tsv_file, model)
+            number_of_imported_rows = self.import_model_data(tsv_file, model)
+            if not number_of_imported_rows is None:
+                imported[model.__tablename__] = number_of_imported_rows
 
         if self.path_data_folder == DEFAULT_PATH_UNZIPPED_DATA_FOLDER:
             shutil.rmtree(DEFAULT_PATH_UNZIPPED_DATA_FOLDER)
 
-        logger.info("Data imported.")
+        logger.info("Data imported: %s", imported)
+        return imported
 
-    def import_model_data(self, tsv_file: str, model):
+    def import_model_data(self, tsv_file: str, model) -> int | None:
+        """
+        Imports data from a TSV file into the specified database model.
+        Reads a TSV file, optionally processes the data based on the model type,
+        cleans and standardizes the DataFrame, and appends the data to the corresponding
+        database table.
+        Args:
+            tsv_file (str): The name of the TSV file to import.
+            model: The SQLAlchemy model class representing the target database table.
+        Returns:
+            int | None: The number of rows inserted into the database, or None if the operation fails.
+        Raises:
+            FileNotFoundError: If the data folder is not set or does not exist.
+        """
+
         if self.path_data_folder:
             file_path = os.path.join(self.path_data_folder, tsv_file)
 
@@ -107,7 +127,20 @@ class DbManager:
 
             df = get_cleaned_and_standardized_dataframe(df)
 
-            df.to_sql(
+            if model == NameRelation:
+                # For NameRelation, we need to ensure that the related_name_id and name_id
+                # have a corresponding entry in the Name table.
+                df_name_id = pd.read_csv(
+                    os.path.join(self.path_data_folder, TsvFileName.NAME),
+                    sep="\t",
+                    usecols=["col:ID"],
+                ).rename(columns={"col:ID": "name_id"})
+                df = df[
+                    df.related_name_id.isin(df_name_id.name_id)
+                    & df.name_id.isin(df_name_id.name_id)
+                ]
+
+            return df.to_sql(
                 model.__tablename__,
                 self.engine,
                 if_exists="append",
