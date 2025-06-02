@@ -1,37 +1,44 @@
+version: "0.1"
+name: biokb_ipni
+
 services:
-  fastapi_service:
+  api:
     build:
       context: .
       dockerfile: Dockerfile
     image: ipni_image
     environment:
-      CONNECTION_STR: "mysql+pymysql://root:root_passwd@mysql_service/ipni"
+      CONNECTION_STR: "mysql+pymysql://ipni_user:ipni_passwd@mysql/ipni?charset=utf8mb4"
     ports:
-      - 8080:81
+      - 8080:8000
     depends_on:
-      - mysql_service
+      - mysql
 
-  phpmyadmin:
-    image: docker.io/phpmyadmin/phpmyadmin:latest
+  pma:
+    image: docker.io/phpmyadmin/phpmyadmin:5.2.1
     ports:
       - "8081:80"
     environment:
-      PMA_HOST: mysql_service
+      PMA_HOST: mysql
       PMA_PORT: 3306
     depends_on:
-      - mysql_service
+      - mysql
 
-  mysql_service:
-    image: docker.io/library/mysql:8
+  mysql:
+    image: docker.io/library/mysql:8.4.0
     ports:
       - "3307:3306"
     environment:
       - MYSQL_ROOT_PASSWORD=root_passwd
       - MYSQL_DATABASE=ipni
-      - MYSQL_USER=db_user
-      - MYSQL_PASSWORD=db_passwd
+      - MYSQL_USER=ipni_user
+      - MYSQL_PASSWORD=ipni_passwd
     volumes:
-      - mysql_service_data:/var/lib/mysql
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      retries: 5
 
 volumes:
-  mysql_service_data:
+  mysql_data:
