@@ -3,6 +3,7 @@ from typing import Optional
 
 from sqlalchemy import Date, ForeignKey, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.dialects.mysql import VARCHAR
 
 from biokb_ipni.constants import PROJECT_NAME
 
@@ -25,11 +26,12 @@ class Name(Base):
     published_in_year: Mapped[Optional[int]]
     published_in_page: Mapped[Optional[int]]
     link: Mapped[str] = mapped_column(String(255), unique=True)
-    remarks: Mapped[Optional[str]] = mapped_column(String(255))
+    remarks: Mapped[Optional[str]] = mapped_column(Text)
 
     # foreign keys
     reference_id: Mapped[Optional[str]] = mapped_column(
-        String(255), ForeignKey(Base._prefix + "reference.id")
+        String().with_variant(VARCHAR(length=255, collation="utf8mb4_bin"), "mysql"),
+        ForeignKey(Base._prefix + "reference.id"),
     )
     # relationships
     taxon: Mapped["Taxon"] = relationship(back_populates="name")
@@ -44,21 +46,24 @@ class Name(Base):
 class Reference(Base):
     __tablename__ = Base._prefix + "reference"
 
-    id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    id: Mapped[str] = mapped_column(
+        String().with_variant(VARCHAR(length=255, collation="utf8mb4_bin"), "mysql"),
+        primary_key=True,
+    )
 
     doi: Mapped[Optional[str]] = mapped_column(String(255))
     alternative_id: Mapped[Optional[str]] = mapped_column(String(255))
     citation: Mapped[Optional[str]] = mapped_column(String(255))
-    title: Mapped[str] = mapped_column(String(255))
+    title: Mapped[str] = mapped_column(Text)
     author: Mapped[Optional[str]] = mapped_column(String(255))
-    issued: Mapped[Optional[str]] = mapped_column(String(255))
+    issued: Mapped[Optional[str]] = mapped_column(Text)
     volume: Mapped[Optional[str]] = mapped_column(String(255))
     issue: Mapped[Optional[str]] = mapped_column(String(255))
     page: Mapped[Optional[str]] = mapped_column(String(255))
     issn: Mapped[Optional[str]] = mapped_column(String(255))
     isbn: Mapped[Optional[str]] = mapped_column(String(255))
     link: Mapped[Optional[str]] = mapped_column(String(255))
-    remarks: Mapped[Optional[str]] = mapped_column(String(255))
+    remarks: Mapped[Optional[str]] = mapped_column(Text)
 
     # relationships
     names: Mapped[list[Name]] = relationship(back_populates="reference")
@@ -113,10 +118,10 @@ class TypeMaterial(Base):
     catalog_number: Mapped[Optional[str]] = mapped_column(String(255))
     collector: Mapped[Optional[str]] = mapped_column(String(255))
     date: Mapped[Optional[date_type]] = mapped_column(Date)
-    locality: Mapped[Optional[str]] = mapped_column(String(255))
+    locality: Mapped[Optional[str]] = mapped_column(Text)
     latitude: Mapped[Optional[float]]
     longitude: Mapped[Optional[float]]
-    remarks: Mapped[Optional[str]] = mapped_column(String(255))
+    remarks: Mapped[Optional[str]] = mapped_column(Text)
 
     # foreign keys
     name_id: Mapped[str] = mapped_column(
