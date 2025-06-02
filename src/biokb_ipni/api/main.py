@@ -1,4 +1,5 @@
 # main.py
+import json
 import os
 from typing import Annotated, List
 
@@ -20,12 +21,9 @@ SQLALCHEMY_DATABASE_URL = os.getenv("CONNECTION_STR", DB_DEFAULT_CONNECTION_STR)
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
 
-# Create the DbManager
-dbm = DbManager(engine=engine)
-models.Base.metadata.create_all(bind=engine)
-
 
 def get_db():
+    dbm = DbManager(engine=engine)
     session = dbm.Session()
     try:
         yield session
@@ -42,11 +40,16 @@ app = FastAPI(
 
 
 ###############################################################################
-# Root
+# Manage
 ###############################################################################
-@app.get("/", tags=["General"])
-def root() -> dict:
-    return {"message": "Welcome to the IPNI Data API!"}
+@app.get("/", tags=["Manage"])
+def check_status() -> dict:
+    return {"msg": "Running!"}
+
+
+@app.get("/import_data/", tags=["Manage"])
+def import_data(session: Session = Depends(get_db)):
+    return DbManager(engine=engine).import_data()
 
 
 ###############################################################################
