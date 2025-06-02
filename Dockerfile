@@ -4,12 +4,13 @@ FROM python:3.12
 # Set the working directory inside the container
 WORKDIR /code
 
-
 # Copy code
-COPY . /code
+COPY src ./src/
+COPY pyproject.toml README.md ./
+
 RUN pip install .
 
-# Start FastAPI
-CMD ["fastapi", "run", "/code/src/ipni/main.py", "--port", "81"]
+# Start fastapi server
+CMD ["fastapi", "run","src/biokb_ipni/api/main.py"]
 
 
