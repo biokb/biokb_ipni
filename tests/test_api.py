@@ -39,7 +39,7 @@ def client_with_data():
 def test_server(client_with_data: TestClient):
     response = client_with_data.get("/")
     assert response.status_code == 200
-    assert response.json() == {"message": "Welcome to the IPNI Data API!"}
+    assert response.json() == {"msg": "Running!"}
 
 
 class TestName:
