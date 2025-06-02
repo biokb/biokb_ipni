@@ -83,6 +83,12 @@ podman-compose up -d
 uvicorn main:app --reload
 ```
 
+## Build and run Docker
+
+```bash
+podman build -t ipni-image . && podman run --replace -p 8000:8000 --name ipni-container -d ipni-image
+```
+
 
 ## Features 
 
