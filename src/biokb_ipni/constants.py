@@ -16,6 +16,9 @@ PATH_TO_ZIP_FILE = os.path.join(DATA_FOLDER, "ipni.zip")
 DEFAULT_PATH_UNZIPPED_DATA_FOLDER = os.path.join(DATA_FOLDER, "unzipped")
 DB_DEFAULT_CONNECTION_STR = "sqlite:///" + os.path.join(BIOKB_FOLDER, "biokb.db")
 
+if not os.path.exists(BIOKB_FOLDER):
+    os.makedirs(BIOKB_FOLDER)
+
 
 class TsvFileName(StrEnum):
     NAME = "Name.tsv"
