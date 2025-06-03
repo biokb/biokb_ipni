@@ -30,6 +30,21 @@ class Name(NameBase):
     id: str
 
 
+class NameSearch(BaseModel):
+    """Fields for search."""
+
+    id: Optional[str] = None
+    rank: Optional[str] = None
+    scientific_name: Optional[str] = None
+    authorship: Optional[str] = None
+    status: Optional[str] = None
+    published_in_year: Optional[int] = None
+    published_in_page: Optional[int] = None
+    link: Optional[str] = None
+    remarks: Optional[str] = None
+    reference_id: Optional[str] = None
+
+
 # -------------------------------------------------------------------
 # Name Detail
 # -------------------------------------------------------------------
@@ -77,6 +92,25 @@ class Reference(ReferenceBase):
     id: str
 
 
+class ReferenceSearch(BaseModel):
+    """Fields for searching references."""
+
+    id: Optional[str] = None
+    doi: Optional[str] = None
+    alternative_id: Optional[str] = None
+    citation: Optional[str] = None
+    title: Optional[str] = None
+    author: Optional[str] = None
+    issued: Optional[str] = None
+    volume: Optional[str] = None
+    issue: Optional[str] = None
+    page: Optional[str] = None
+    issn: Optional[str] = None
+    isbn: Optional[str] = None
+    link: Optional[str] = None
+    remarks: Optional[str] = None
+
+
 # -------------------------------------------------------------------
 # Taxon Schemas
 # -------------------------------------------------------------------
@@ -98,6 +132,17 @@ class Taxon(TaxonBase):
     id: str
 
 
+class TaxonSearch(BaseModel):
+    """Fields for searching taxon records."""
+
+    id: Optional[str] = None
+    provisional: Optional[bool] = None
+    status: Optional[str] = None
+    family: Optional[str] = None
+    link: Optional[str] = None
+    name_id: Optional[str] = None
+
+
 # -------------------------------------------------------------------
 # NameRelation Schemas
 # -------------------------------------------------------------------
@@ -116,6 +161,15 @@ class NameRelation(NameRelationBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+
+
+class NameRelationSearch(BaseModel):
+    """Fields for searching name relations."""
+
+    id: Optional[int] = None
+    type: Optional[str] = None
+    related_name_id: Optional[str] = None
+    name_id: Optional[str] = None
 
 
 # -------------------------------------------------------------------
@@ -143,3 +197,20 @@ class TypeMaterial(TypeMaterialBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+
+
+class TypeMaterialSearch(BaseModel):
+    """Fields for searching type material records."""
+
+    id: Optional[int] = None
+    citation: Optional[str] = None
+    status: Optional[str] = None
+    institution_code: Optional[str] = None
+    catalog_number: Optional[str] = None
+    collector: Optional[str] = None
+    date: Optional[date_type] = None
+    locality: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    remarks: Optional[str] = None
+    name_id: Optional[str] = None

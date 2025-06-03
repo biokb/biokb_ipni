@@ -1,9 +1,13 @@
 # main.py
 import json
+import logging
 import os
-from typing import Annotated, List
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Annotated, List, Optional, Union, get_args, get_origin
 
 from fastapi import Depends, FastAPI, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
@@ -15,6 +19,11 @@ from biokb_ipni.api.tags import Tag
 from biokb_ipni.constants import DB_DEFAULT_CONNECTION_STR
 from biokb_ipni.db import models
 from biokb_ipni.db.manager import DbManager
+
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
+logger = logging.getLogger("api")
 
 # 1) Configure Database
 SQLALCHEMY_DATABASE_URL = os.getenv("CONNECTION_STR", DB_DEFAULT_CONNECTION_STR)
@@ -37,6 +46,78 @@ app = FastAPI(
     description="RestfulAPI for IPNI-based data. <br><br>Reference: https://www.ipni.org/",
     version="0.1.0",
 )
+
+
+def build_dynamic_query(
+    search_obj: BaseModel,
+    model_cls,
+    db: Session,
+    limit: Optional[int] = None,  # default limit for pagination
+    offset: Optional[int] = None,  # default offset for pagination
+):
+    """
+    Build and execute a SQLAlchemy 2.0-style SELECT based on the non-None
+    attributes of a Pydantic model instance.  The operator is inferred from
+    each field's *declared* type, not the runtime value.
+    """
+    filters = []
+
+    # Only the attributes the client actually supplied (`exclude_none`)
+    payload = search_obj.model_dump(exclude_none=True)
+
+    for field_name, value in payload.items():
+
+        # Skip if the SQLAlchemy model has no matching column / hybrid attr
+        if not hasattr(model_cls, field_name):
+            continue
+        column = getattr(model_cls, field_name)
+
+        # ↓ The type you wrote in the Pydantic model definition
+        declared_type = search_obj.__pydantic_fields__[field_name].annotation
+        # Handle Optional types (e.g., Optional[str] or Union[str, None])
+        if get_origin(declared_type) is Union:
+            args = [arg for arg in get_args(declared_type) if arg is not type(None)]
+            if args:
+                declared_type = args[0]
+        origin = get_origin(declared_type) or declared_type
+
+        # STRING ......................................................................
+        if origin is str:
+            logger.info("used string filter")
+            filters.append(column.like(value) if ("%" in value) else column == value)
+
+        # NUMBERS .....................................................................
+        elif origin in (int, float, Decimal):
+            filters.append(column == value)
+
+        # BOOLEANS ....................................................................
+        elif origin is bool:
+            filters.append(column.is_(value))
+
+        # DATE / DATETIME – supports equality or simple closed range ...................
+        elif origin in (date, datetime):
+            if isinstance(value, (list, tuple)) and len(value) == 2:
+                filters.append(column.between(value[0], value[1]))
+            else:
+                filters.append(column == value)
+
+        # FALLBACK .....................................................................
+        else:
+            logger.warning(
+                f"Unsupported type for field '{field_name}': {declared_type}. "
+                "Using equality operator as fallback."
+            )
+            filters.append(column == value)
+
+    stmt = select(model_cls).where(*filters)
+    if limit is not None:
+        stmt = stmt.limit(limit)
+    if offset is not None:
+        stmt = stmt.offset(offset)
+
+    logger.info(stmt.compile(compile_kwargs={"literal_binds": True}))
+
+    return db.execute(stmt).scalars().all()
 
 
 ###############################################################################
@@ -75,13 +156,34 @@ def list_names(
     return session.query(models.Name).offset(offset).limit(limit).all()
 
 
+@app.get("/name_ranks/", tags=[Tag.NAME])
+def name_ranks(
+    session: Session = Depends(get_db),
+) -> List[str]:
+    """Get all distinct ranks in names."""
+    ranks = session.query(models.Name.rank).group_by(models.Name.rank).all()
+    return [r[0] for r in ranks if r[0] is not None]
+
+
+@app.get("/name_statuses/", tags=[Tag.NAME])
+def name_statuses(
+    session: Session = Depends(get_db),
+) -> List[str]:
+    """Get all distinct statuses in names."""
+    statuses = session.query(models.Name.status).group_by(models.Name.status).all()
+    return [s[0] for s in statuses if s[0] is not None]
+
+
 @app.get("/names/search/", response_model=List[schemas.Name], tags=[Tag.NAME])
 def search_names(
     offset: int = 0,
     limit: Annotated[int, Query(le=10)] = 3,
+    search: schemas.NameSearch = Depends(schemas.NameSearch),
     session: Session = Depends(get_db),
-) -> List[models.Name]:
-    return session.query(models.Name).offset(offset).limit(limit).all()
+):
+    return build_dynamic_query(
+        search_obj=search, model_cls=models.Name, db=session, limit=limit, offset=offset
+    )
 
 
 ###############################################################################
@@ -109,6 +211,24 @@ def list_references(
     return session.query(models.Reference).offset(offset).limit(limit).all()
 
 
+@app.get(
+    "/references/search/", response_model=List[schemas.Reference], tags=[Tag.REFERENCE]
+)
+def search_references(
+    offset: int = 0,
+    limit: Annotated[int, Query(le=10)] = 3,
+    search: schemas.ReferenceSearch = Depends(schemas.ReferenceSearch),
+    session: Session = Depends(get_db),
+):
+    return build_dynamic_query(
+        search_obj=search,
+        model_cls=models.Reference,
+        db=session,
+        limit=limit,
+        offset=offset,
+    )
+
+
 # ###############################################################################
 # # Taxon
 # ###############################################################################
@@ -130,6 +250,31 @@ def list_taxons(
     session: Session = Depends(get_db),
 ) -> List[models.Taxon]:
     return session.query(models.Taxon).offset(offset).limit(limit).all()
+
+
+@app.get("/taxon_families/", tags=[Tag.TAXON])
+def taxon_families(
+    session: Session = Depends(get_db),
+) -> List[str]:
+    """Get all distinct families in taxa."""
+    families = session.query(models.Taxon.family).group_by(models.Taxon.family).all()
+    return [f[0] for f in families if f[0] is not None]
+
+
+@app.get("/taxons/search/", response_model=List[schemas.Taxon], tags=[Tag.TAXON])
+def search_taxons(
+    offset: int = 0,
+    limit: Annotated[int, Query(le=10)] = 3,
+    search: schemas.TaxonSearch = Depends(schemas.TaxonSearch),
+    session: Session = Depends(get_db),
+):
+    return build_dynamic_query(
+        search_obj=search,
+        model_cls=models.Taxon,
+        db=session,
+        limit=limit,
+        offset=offset,
+    )
 
 
 # ###############################################################################
@@ -165,6 +310,37 @@ def list_name_relations(
     return session.query(models.NameRelation).offset(offset).limit(limit).all()
 
 
+@app.get("/name_relation_types/", tags=[Tag.NAME_RELATION])
+def name_relation_types(
+    session: Session = Depends(get_db),
+) -> List[str]:
+    """Get all distinct types in name relations."""
+    types = (
+        session.query(models.NameRelation.type).group_by(models.NameRelation.type).all()
+    )
+    return [t[0] for t in types if t[0] is not None]
+
+
+@app.get(
+    "/name_relations/search/",
+    response_model=List[schemas.NameRelation],
+    tags=[Tag.NAME_RELATION],
+)
+def search_name_relations(
+    offset: int = 0,
+    limit: Annotated[int, Query(le=10)] = 3,
+    search: schemas.NameRelationSearch = Depends(schemas.NameRelationSearch),
+    session: Session = Depends(get_db),
+):
+    return build_dynamic_query(
+        search_obj=search,
+        model_cls=models.NameRelation,
+        db=session,
+        limit=limit,
+        offset=offset,
+    )
+
+
 # ###############################################################################
 # # TypeMaterial
 # ###############################################################################
@@ -196,3 +372,23 @@ def list_type_materials(
     session: Session = Depends(get_db),
 ) -> List[models.TypeMaterial]:
     return session.query(models.TypeMaterial).offset(offset).limit(limit).all()
+
+
+@app.get(
+    "/type_materials/search/",
+    response_model=List[schemas.TypeMaterial],
+    tags=[Tag.TYPE_MATERIAL],
+)
+def search_type_materials(
+    offset: int = 0,
+    limit: Annotated[int, Query(le=10)] = 3,
+    search: schemas.TypeMaterialSearch = Depends(schemas.TypeMaterialSearch),
+    session: Session = Depends(get_db),
+):
+    return build_dynamic_query(
+        search_obj=search,
+        model_cls=models.TypeMaterial,
+        db=session,
+        limit=limit,
+        offset=offset,
+    )
