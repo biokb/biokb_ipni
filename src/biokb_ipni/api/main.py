@@ -2,11 +2,14 @@
 import json
 import logging
 import os
+import secrets
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, List, Optional, Union, get_args, get_origin
 
 from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
@@ -20,10 +23,14 @@ from biokb_ipni.constants import DB_DEFAULT_CONNECTION_STR
 from biokb_ipni.db import models
 from biokb_ipni.db.manager import DbManager
 
+# Configure logging
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
-logger = logging.getLogger("api")
+logger = logging.getLogger(__name__)
+
+USERNAME = os.environ.get("API_USERNAME", "admin")
+PASSWORD = os.environ.get("API_PASSWORD", "admin")
 
 # 1) Configure Database
 SQLALCHEMY_DATABASE_URL = os.getenv("CONNECTION_STR", DB_DEFAULT_CONNECTION_STR)
@@ -46,6 +53,25 @@ app = FastAPI(
     description="RestfulAPI for IPNI-based data. <br><br>Reference: https://www.ipni.org/",
     version="0.1.0",
 )
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
+
+
+def verify_credentials(credentials: HTTPBasicCredentials = Depends(HTTPBasic())):
+    is_correct_username = secrets.compare_digest(credentials.username, USERNAME)
+    is_correct_password = secrets.compare_digest(credentials.password, PASSWORD)
+    if not (is_correct_username and is_correct_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+            headers={"WWW-Authenticate": "Basic"},
+        )
 
 
 def build_dynamic_query(
@@ -129,7 +155,10 @@ def check_status() -> dict:
 
 
 @app.get("/import_data/", tags=["Manage"])
-def import_data(session: Session = Depends(get_db)):
+def import_data(
+    credentials: HTTPBasicCredentials = Depends(verify_credentials),
+    session: Session = Depends(get_db),
+):
     return DbManager(engine=engine).import_data()
 
 
