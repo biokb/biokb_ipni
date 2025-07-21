@@ -176,6 +176,26 @@ def get_name(name_id: str, session: Session = Depends(get_db)) -> models.Name | 
     return obj
 
 
+@app.get("/names/sounds_like", response_model=List[schemas.Name], tags=[Tag.NAME])
+def names_sounds_like(
+    session: Session = Depends(get_db),
+    name: str = Query(..., description="Name to search for, using SOUNDEX"),
+) -> List[models.Name]:
+    """Fuzzy search for names that sound like the given name."""
+    query = (
+        session.query(models.Name)
+        .filter(text(f"SOUNDEX(scientific_name) = SOUNDEX('{name}')"))
+        .order_by(models.Name.scientific_name)
+    )
+    results = query.all()
+    if not results:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No names found that sound like '{name}'.",
+        )
+    return results
+
+
 @app.get("/names/", response_model=List[schemas.Name], tags=[Tag.NAME])
 def list_names(
     offset: int = 0,
