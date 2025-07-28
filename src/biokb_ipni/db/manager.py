@@ -2,6 +2,7 @@ import logging
 import os
 import shutil
 from codecs import ignore_errors
+from turtle import mode
 from typing import Any
 
 import pandas as pd
@@ -139,6 +140,16 @@ class DbManager:
                     df.related_name_id.isin(df_name_id.name_id)
                     & df.name_id.isin(df_name_id.name_id)
                 ]
+
+            # if model == Reference:
+            #     # For Reference, we need to ensure that the names in the reference
+            #     # have a corresponding entry in the Name table.
+            #     df_name_id = pd.read_csv(
+            #         os.path.join(self.path_data_folder, TsvFileName.NAME),
+            #         sep="\t",
+            #         usecols=["col:ID"],
+            #     ).rename(columns={"col:ID": "name_id"})
+            #     df = df[df.name_id.isin(df_name_id.name_id)]
 
             return df.to_sql(
                 model.__tablename__,

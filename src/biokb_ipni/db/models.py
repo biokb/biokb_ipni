@@ -1,9 +1,11 @@
+from calendar import c
 from datetime import date as date_type
+from re import L
 from typing import Optional
 
 from sqlalchemy import Date, ForeignKey, String, Text
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.dialects.mysql import VARCHAR
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from biokb_ipni.constants import PROJECT_NAME
 
@@ -20,7 +22,7 @@ class Name(Base):
     id: Mapped[str] = mapped_column(String(255), primary_key=True)
 
     rank: Mapped[str] = mapped_column(String(255))
-    scientific_name: Mapped[str] = mapped_column(String(255))
+    scientific_name: Mapped[str] = mapped_column(String(255), index=True)
     authorship: Mapped[Optional[str]] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(255))
     published_in_year: Mapped[Optional[int]]
@@ -30,7 +32,9 @@ class Name(Base):
 
     # foreign keys
     reference_id: Mapped[Optional[str]] = mapped_column(
-        String().with_variant(VARCHAR(length=255, collation="utf8mb4_bin"), "mysql"),
+        String(length=255).with_variant(
+            VARCHAR(255, collation="utf8mb4_bin"), "mysql", "mariadb"
+        ),
         ForeignKey(Base._prefix + "reference.id"),
     )
     # relationships
@@ -47,7 +51,9 @@ class Reference(Base):
     __tablename__ = Base._prefix + "reference"
 
     id: Mapped[str] = mapped_column(
-        String().with_variant(VARCHAR(length=255, collation="utf8mb4_bin"), "mysql"),
+        String(length=255).with_variant(
+            VARCHAR(255, collation="utf8mb4_bin"), "mysql", "mariadb"
+        ),
         primary_key=True,
     )
 

@@ -1,5 +1,4 @@
-# Use a Python image that supports PDM
-FROM python:3.12
+FROM python:3.12-alpine
 
 # Set the working directory inside the container
 WORKDIR /code

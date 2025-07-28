@@ -2,16 +2,19 @@
 import json
 import logging
 import os
+import re
 import secrets
 from datetime import date, datetime
 from decimal import Decimal
+from difflib import SequenceMatcher
 from typing import Annotated, List, Optional, Union, get_args, get_origin
 
+import Levenshtein
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
-from sqlalchemy import create_engine, select
+from sqlalchemy import and_, create_engine, not_, or_, select
 from sqlalchemy.orm import Session
 
 # from database import SessionLocal
@@ -176,24 +179,101 @@ def get_name(name_id: str, session: Session = Depends(get_db)) -> models.Name | 
     return obj
 
 
-@app.get("/names/sounds_like", response_model=List[schemas.Name], tags=[Tag.NAME])
-def names_sounds_like(
+@app.get("/names/find_similar", tags=[Tag.NAME])
+def names_find_similar(
     session: Session = Depends(get_db),
-    name: str = Query(..., description="Name to search for, using SOUNDEX"),
-) -> List[models.Name]:
-    """Fuzzy search for names that sound like the given name."""
-    query = (
-        session.query(models.Name)
-        .filter(text(f"SOUNDEX(scientific_name) = SOUNDEX('{name}')"))
-        .order_by(models.Name.scientific_name)
-    )
-    results = query.all()
+    name: str = Query(..., description="Name to search for"),
+):
+    """Fuzzy search for similar names using LEVENSHTEIN algorithm."""
+    name = re.sub(r"\s+", " ", name.strip())
+    name_splitted = [x.strip() for x in name.split(" ")]
+
+    stmt = select(models.Name.scientific_name, models.Name.id).select_from(models.Name)
+
+    # First, check for exact match
+    # If an exact match is found, return it immediately.
+    exact_results = session.execute(
+        stmt.where(models.Name.scientific_name == name)
+    ).all()
+    if exact_results:
+        return_values = []
+        for exact_result in exact_results:
+            return_values.append(
+                {
+                    "calculate_with": "exact",
+                    "scientific_name": exact_result.scientific_name,
+                    "ipni_id": exact_result.id,
+                    "similarity": 1.0,  # Exact match
+                }
+            )
+        return return_values
+
+    # If no exact match, check for soundex match
+    # This is a phonetic algorithm for indexing names by sound, as pronounced in English.
+    stmt2 = stmt.where(text(f"SOUNDEX(scientific_name) = SOUNDEX('{name}')"))
+    results = session.execute(stmt2).all()
+
+    ratios = []
+    if not results:
+        # If no exact or soundex match, use Levenshtein distance
+
+        if len(name_splitted) < 2:
+            search_str = f"{name}%"
+        else:
+            search_str = f"{name_splitted[0]}% {name_splitted[1]}%"
+        stmt3 = (
+            select(models.Name.scientific_name, models.Name.id)
+            .select_from(models.Name)
+            .where(models.Name.scientific_name.like(search_str))
+        )
+        results = session.execute(stmt3).all()
+
+        # check for similarity
+
+        for result in results:
+
+            ratio = SequenceMatcher(None, name, result.scientific_name).ratio()
+            if ratio > 0.3:  # Threshold for similarity
+                ratios.append(
+                    {
+                        "calculate_with": "soundex",
+                        "scientific_name": result.scientific_name,
+                        "ipni_id": result.id,
+                        "similarity": round(ratio, 2),  # Convert to percentage
+                    }
+                )
+        if ratios:
+            return sorted(ratios, key=lambda x: x["similarity"], reverse=True)
+
+    # if no results Levenshtein
+    if not ratios:
+        stmt4 = stmt.where(
+            or_(
+                models.Name.scientific_name.like(f"{name[0]}%"),
+                models.Name.scientific_name.like(f"%{name[-4:]}"),
+            )
+        )
+        results = session.execute(stmt4).all()
+
+        for result in results:
+            ratio = Levenshtein.ratio(name, result.scientific_name)
+            if ratio > 0.3:
+                ratios.append(
+                    {
+                        "calculate_with": "levenshtein",
+                        "scientific_name": result.scientific_name,
+                        "ipni_id": result.id,
+                        "similarity": round(ratio, 2),  # Convert to percentage
+                    }
+                )
+        if ratios:
+            return sorted(ratios, key=lambda x: x["similarity"], reverse=True)[:3]
+
     if not results:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No names found that sound like '{name}'.",
+            detail=f"Name '{name}' not found.",
         )
-    return results
 
 
 @app.get("/names/", response_model=List[schemas.Name], tags=[Tag.NAME])
