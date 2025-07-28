@@ -42,62 +42,30 @@ Creating a FastAPI application with IPNI data in a local relational database can
   - *Rate Limit Control*: No external API limits—your app can handle as many queries as needed.
   - *Provide Data as JSON, CSV, or XML* : Serve plant name data in different formats based on user requirements.
 
-## Getting started 
-1. **Clone the repository**
+### Run with MySQL
 
-```bash 
-git clone https://gitlab.informatik.uni-bonn.de/proglab-ii-24/projects/project_2.git
-cd project_2 
-python -m venv venv
-source venv/bin/activate 
-pip install .
-```
-OR use PDM
-```python
-pdm install
-``` 
+**Requirements:**
+- podman
 
-2. **Requirements** 
-- python3.12 or higher 
-- Git 
-- Docker Desktop
-- SQLite
-- MySQL
-- SQLAlchemy
-- FastAPI 
-- Pandas 
-
-3. **Install Docker Desktop** 
-Link : https://www.docker.com/products/docker-desktop/
-4. Docker should be running on your machine, allowing you to build, run and manage containers.
-
-```python
-podman-compose up -d
-``` 
-
-5. **Run the FastAPI server**
-- Run the data migration endpoints 
-- The password is : root_passwd
-
-```python
-uvicorn main:app --reload
+install podman-compose
+```bash
+pip install podman-compose
 ```
 
-## Build and run Docker
+set connection for fastAPI
+```bash
+export CONNECTION_STR="mysql+pymysql://biokb_user:biokb_passwd@127.0.0.1:3307/biokb"
+```
+
+start MySQL (port:3307) and phpMyAdmin(port:8081) as container 
 
 ```bash
-podman build -t ipni-image . && podman run --replace -p 8000:8000 --name ipni-container -d ipni-image
+podman-compose up -d mysql pma
 ```
 
+start fastAPI
+```bash
+fastapi run src/biokb_ipni/api/main.py --reload
+```
 
-## Features 
-
-Project 2 is a Python library with the following features:
-
-- **SQLAlchemy** for object-relational mapping (ORM) that defines databse models.
-- **Primary and foreign key management**: Establish relationships between different tables using object-relational mapping.
-- **MySQL**: A full-featured database server designed for handling large-scale applications.
-- **SQLite**: A self-contained database.
-- **FastAPI** framework:web framework for building APIs with Python
-- **Docker**: Containerizes the package, manages, and deploys services.
-
+Open http://127.0.0.1:8000/docs
