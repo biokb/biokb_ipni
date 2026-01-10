@@ -1,71 +1,273 @@
-# IPNI
+![docs/imgs/](https://raw.githubusercontent.com/biokb/biokb_ipni/refs/heads/main/docs/imgs/biokb_logo_writing.png)
+# BioKb-IPNI
 
-🌱 The `ipni` library is designed to ...
-- load
-- query and 
-- analyse 
+![](https://img.shields.io/pypi/v/biokb_ipni?color=blue&label=biokb_ipni&style=flat-square)
+![](https://img.shields.io/pypi/pyversions/biokb_ipni?style=flat-square)
+![](https://img.shields.io/pypi/l/biokb_ipni?style=flat-square)
 
-data from the [International Plant Names Index](https://www.ipni.org/) (IPNI) database
 
-Main features of the library are:
 
-1. Relational database 
-2. FastAPI
+BioKb-IPNI (biokb_ipni) is a python package to import IPNI data into a relational database and create RDF triples (turtles) from it. The turtles can be imported into a Neo4J graph database. The package is part of the [BioKb family of packages](https://github.com/biokb) to create and connect biological and medical knowledge bases and graphs.
 
-## Background on IPNI
+![Components](https://raw.githubusercontent.com/biokb/biokb_ipni/refs/heads/main/docs/imgs/components.png)
 
-The International Plant Names Index (IPNI) is a database of plant names, including botanical names of seed plants, ferns, and lycophytes. It provides authoritative information on scientific names, authors, and publication details, helping researchers ensure accurate plant nomenclature. IPNI is a collaborative project between [The Royal Botanic Gardens, Kew](https://www.kew.org/), [The Harvard University Herbaria](https://www.huh.harvard.edu/), and [The Australian National Herbarium](https://www.anbg.gov.au/cpbr/herbarium/). It is freely accessible online and plays a crucial role in botanical taxonomy and plant classification.
+The package provides different options to run it: from command line, as RESTful API server, as Podman/Docker container, or as Podman/Docker networked containers with Neo4J and a relational database.
 
-Creating your own FastAPI application with IPNI data in your own database can provide several advantages, depending on your goals. Below are some key motivations:
+## Features
 
-## Motivation for this project
+biokb_ipni allows to ...
 
-Creating a FastAPI application with IPNI data in a local relational database can provide several advantages:
+1. Query IPNI data with SQLAlchemy or raw SQL
+2. Load, query and manage IPNI data with GUIs for knowledge base and graphs (phpMyAdmin, Neo4J Browser)
+3. Query data via a RESTful API (FastAPI) with OpenAPI documentation and interactive Swagger-UI
 
-- **Performance & Speed Optimization**
-  - *Faster Queries*: Instead of relying on IPNI’s web interface or API (which may have rate limits or latency), a local database enables instant and fast lookups
-  - *Optimized Indexing*: You can index your database based on name, author, or publication year to enhance search efficiency
-  - *Batch Processing*: Perform bulk queries and cross-referencing faster than using IPNI’s online tools
+to provide this ***biokb_ipni*** ...
 
-- **Custom Features & Enhancements**
-  - *Advanced Search Filters*: Add filters like date range, geographic region, plant family, synonymy status, etc.
-  - *Fuzzy Searching*: Implement approximate name matching (e.g., handling typos or alternative spellings).
-  - *Full-Text Search*: Use powerful search engines like MySQL’s full-text search to allow partial or phonetic matches.
+- imports [IPNI](https://www.ebi.ac.uk/ipni/) data into a relational database 
+- creates [RDF](https://www.w3.org/RDF/) triples (turtles) from the relational database
+- imports the RDF triples into a [Neo4J](https://neo4j.com) graph database
 
-- **Offline Access & Data Ownership**
-  - *Work Without Internet*: Useful for remote field research or areas with limited connectivity.
-  - *Ensure Data Availability*: If IPNI goes down or changes API policies, you still have your data.
-  - *Control Updates & Backups*: Keep track of changes in scientific names, authors, and publications over time.
+***Supported databases***: [SQLite](https://sqlite.org/), [MariaDB](https://go.mariadb.com)/[MySQL](https://www.mysql.com/), [PostgreSQL](https://www.postgresql.org/), [Oracle](https://www.oracle.com/database/), [Microsoft SQL Server](https://www.microsoft.com/en-us/sql-server), and any other database [supported by SQLAlchemy](https://docs.sqlalchemy.org/en/20/core/engines.html#supported-databases).
 
-- **API Customization for Specific Needs**
-  - *Create a Tailored API*: Unlike IPNI’s general API, your FastAPI service can match your organization’s requirements.
-  - *Rate Limit Control*: No external API limits—your app can handle as many queries as needed.
-  - *Provide Data as JSON, CSV, or XML* : Serve plant name data in different formats based on user requirements.
 
-### Run with MySQL
+### Options to run BioKb-IPNI
 
-**Requirements:**
-- podman
+All biokb packages share the same API and CLI structure. You have different options to run the packages:
+1. [from command line](#from-command-line) (simplest way to get started)
+2. [as RESTful API server](#as-restful-api-server) (can start directly from command line)
+3. [as Podman/Docker container](#as-podmandocker-container) (without import into Neo4J, but export of turtles possible)
+4. [as Podman/Docker networked containers](#as-podmandocker-networked-containers) (with all features) and 3 containers: 
+   1. high-performance relational databases (PostgreSQL, Oracle, MySQL, ...)
+   2. RESTful API (fastAPI) for queries, data import and export
+   3. GUI for querying and administration of MySQL over the Web
 
-install podman-compose
-```bash
-pip install podman-compose
-```
 
-set connection for fastAPI
-```bash
-export CONNECTION_STR="mysql+pymysql://biokb_user:biokb_passwd@127.0.0.1:3307/biokb"
-```
+## Installation
 
-start MySQL (port:3307) and phpMyAdmin(port:8081) as container 
+If [uv](https://docs.astral.sh/uv/) is installed:
 
 ```bash
-podman-compose up -d mysql pma
+uv venv
+source .venv/bin/activate
+uv pip install biokb_ipni
 ```
+Otherwise:
 
-start fastAPI
 ```bash
-fastapi run src/biokb_ipni/api/main.py --reload
+python3 -m venv .venv
+source .venv/bin/activate
+pip install biokb_ipni
 ```
 
-Open http://127.0.0.1:8000/docs
+
+## Run BioKb-IPNI
+
+### From command line
+
+For sure the simplest way is to run all steps:
+
+```bash
+biokb_ipni import-data
+biokb_ipni create-ttls
+```
+Before importing into Neo4J, make sure Neo4J is running (see below "[How to run Neo4J](#how-to-run-neo4j)").
+
+Then import into Neo4J:
+```bash
+biokb_ipni import-neo4j -p neo4j_password
+```
+
+http://localhost:7474  (user/password: neo4j/neo4j_password)
+
+For more options see the [CLI options](#cli-options) section below.
+
+
+### As RESTful API server
+
+***Usage:*** `biokb_ipni run-api [OPTIONS]`
+
+```bash
+biokb_ipni run-api
+```
+
+- ***user***: admin  
+- ***password***: admin
+
+| Option | long | Description | default |
+|--------|------|-------------|---------|
+| -P     | --port | API server port | 8000 |
+| -u     | --user     | API username | admin   |
+| -p     | --password | API password | admin | 
+
+http://localhost:8000/docs#/
+
+1. [Import data](http://localhost:8000/docs#/Database%20Management/import_data_import_data__post)
+2. [Export ttls](http://localhost:8000/docs#/Database%20Management/get_report_export_ttls__get)
+3. Run Neo4J (see below "[How to run Neo4J](#how-to-run-neo4j)")
+4. [Import Neo4J](http://localhost:8000/docs#/Database%20Management/import_neo4j_import_neo4j__get)
+
+Be patient, each step takes several minutes.
+
+
+### As Podman/Docker container
+
+For docker just replace `podman` with `docker` in the commands below.
+
+Build & run with Podman:
+```bash
+git clone https://github.com/biokb/biokb_ipni.git
+cd biokb_ipni
+podman build -t biokb_ipni_image .
+podman run -d --rm --name biokb_ipni_simple -p 8000:8000 biokb_ipni_image
+```
+
+- Login: admin  
+- Password: admin
+
+With environment variable for user and password for more security:
+```bash
+podman run -d --rm --name biokb_ipni_simple -p 8000:8000 -e API_PASSWORD=your_secure_password -e API_USER=your_secure_user biokb_ipni_image
+```
+
+http://localhost:8000/docs
+
+On the website:
+1. [Import data](http://localhost:8000/docs#/Database%20Management/import_data_import_data__post)
+2. [Export ttls](http://localhost:8000/docs#/Database%20Management/get_report_export_ttls__get)
+
+Neo4j import in this context is not possible because Neo4J is not running in the same network as service, but the exported turtles can be imported into any Neo4J instance using the CLI (`biokb_ipni import-neo4j`).
+
+to stop the container:
+```bash
+podman stop biokb_ipni_simple
+```
+to rerun the container:
+```bash
+podman start biokb_ipni_simple
+```
+
+### Run as Podman networked containers
+
+If you have docker or podman on your system, the easiest way to run all components (relational database, RESTful API server, phpMyAdmin GUI) is to use networked containers with `podman-compose`/`docker-compose`.
+
+```bash
+git clone https://github.com/biokb/biokb_taxtree.git
+cd biokb_taxtree
+podman-compose -f docker-compose.db_neo.yml --env-file .env_template up -d
+podman-compose --env-file .env_template up -d
+```
+http://localhost:8001/docs
+
+On the website:
+1. [Import data](http://localhost:8001/docs#/Database%20Management/import_data_import_data__post)
+2. [Export ttls](http://localhost:8001/docs#/Database%20Management/get_report_export_ttls__get)
+3. [Import Neo4J](http://localhost:8001/docs#/Database%20Management/import_neo4j_import_neo4j__get)
+
+stop with:
+```bash
+podman pod stop pod_biokb_db
+podman-compose stop
+```
+
+rerun with:
+```bash
+podman pod start pod_biokb_db
+podman-compose start
+```
+
+***Tip***: Copy the `.env_template` to `.env` and change the default passwords in the `.env` file before starting the containers for better security. If you have done that you need to use `--env-file .env` instead of `--env-file .env_template` in the commands above or just omit the `--env-file` option (because the default is `.env`).
+
+## CLI Options
+
+### Import data into relational database
+
+***Usage:*** `biokb_ipni import-data [OPTIONS]`
+
+```
+biokb_ipni import-data
+```
+
+-> SQLite database in `~/.biokb/biokb.db`. Open with e.g. [DB Browser for SQLite](https://sqlitebrowser.org/)
+
+| Option | long | Description | default |
+|--------|------|-------------|---------|
+| -f     | --force-download | Force re-download of the source file | False   |
+| -k     | --keep-files     | Keep downloaded source files after import | False   |
+| -c     | --connection-string TEXT | SQLAlchemy engine URL | sqlite:///ipni.db | 
+
+If you want to use different relational database (MySQL, PostgreSQL, etc.), provide the connection string with `-c` option. Examples:
+- MySQL: `mysql+pymysql://user:password@localhost/biokb`
+- PostgreSQL: `postgresql+psycopg2://user:password@localhost/biokb`
+
+
+For more examples please check [how to create database URLs](https://docs.sqlalchemy.org/en/20/core/engines.html#database-urls)
+
+### Create RDF turtles
+
+***Usage:*** `biokb_ipni create-ttls [OPTIONS]`
+
+```
+biokb_ipni create-ttls
+```
+-> RDF turtles will be created in `~/.biokb/ipni/data/ttls.zip`
+
+| Option | long | Description | default |
+|--------|------|-------------|---------|
+| -c     | --connection-string TEXT | SQLAlchemy engine URL | sqlite:///ipni.db |
+
+### Import into Neo4J
+
+Start Neo4J ...
+```bash
+podman run --rm --name biokb-neo4j-test -p7474:7474 -p7687:7687 -e NEO4J_AUTH=neo4j/neo4j_password neo4j:latest
+```
+***Note:*** Remove `--rm` if you want to keep the container after stopping it. Replace `podman` with `docker` if you use Docker.
+
+... and import into Neo4J:
+```
+biokb_ipni import-neo4j -p neo4j_password
+```
+
+| Option               | long                | Description          | default                  |
+|----------------------|---------------------|----------------------|--------------------------|
+|-i | --uri | Neo4j database URI  | bolt://localhost:7687    |
+| -u                    | --user              | Neo4j username        | neo4j                    |
+| -p                   | --password          | Neo4j password         | |
+
+
+http://localhost:7474  (user/password: neo4j/neo4j_password)
+
+
+
+## How to run Neo4J
+
+For the options "Run BioKb-IPNI as ..."
+1. [From command line](#from-command-line)
+2. [As RESTful API server](#as-restful-api-server)
+
+you need to run Neo4J separately.
+
+
+If you have not already a Neo4j instance running, the easiest way is to run Neo4J as Podman/ Docker container.
+
+
+For docker just replace `podman` with `docker` in the commands below.
+```bash
+podman run -d --rm --name biokb-neo4j -p7474:7474 -p7687:7687 -e NEO4J_AUTH=neo4j/neo4j_password neo4j:latest
+# Remove `--rm` if you want to keep the container after stopping it.
+```
+Neo4J is then available at:
+http://localhost:7474  (user/password: neo4j/neo4j_password
+
+Stop Neo4J with:
+
+```bash
+podman stop biokb-neo4j
+```
+if you have not used `--rm` above, you can restart Neo4J with:
+```bash
+podman start biokb-neo4j
+```
+
+## License
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
