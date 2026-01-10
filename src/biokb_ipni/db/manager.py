@@ -1,13 +1,13 @@
 import logging
 import os
 import shutil
-from codecs import ignore_errors
-from turtle import mode
-from typing import Any
+import sqlite3
+from typing import Any, Optional
 
 import pandas as pd
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm.session import Session
 
 from biokb_ipni.constants import (
     DB_DEFAULT_CONNECTION_STR,
@@ -30,6 +30,18 @@ from biokb_ipni.tools import (
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+@event.listens_for(Engine, "connect")
+def set_sqlite_pragma(
+    dbapi_connection: sqlite3.Connection, _connection_record: object
+) -> None:
+    """Enable foreign key constraint for SQLite."""
+    if isinstance(dbapi_connection, sqlite3.Connection):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
 
 file_table_map: dict[str, Any] = {
     TsvFileName.REFERENCE: Reference,
@@ -68,24 +80,45 @@ class DbManager:
         self.path_data_folder = path_data_folder
         self.force_download = force_download
 
-    def create_db(self):
+    @property
+    def session(self) -> Session:
+        """Get a new SQLAlchemy session.
+
+        Returns:
+            Session: SQLAlchemy session
+        """
+        return self.Session()
+
+    def create_db(self) -> None:
         """Create all tables in the database."""
         Base.metadata.create_all(self.engine)
 
-    def drop_db(self):
+    def drop_db(self) -> None:
         """Drop all tables from the database."""
         Base.metadata.drop_all(self.engine)
 
-    def recreate_db(self):
+    def recreate_db(self) -> None:
         """Recreate the database by dropping and creating all tables."""
         self.drop_db()
         self.create_db()
         logger.info("Database recreated.")
 
-    def import_data(self) -> dict[str, int]:
+    def import_data(
+        self, force_download: bool = False, keep_files: bool = False
+    ) -> dict[str, int]:
+        """Import all data in database.
+        Args:
+            force_download (bool, optional): If True, will force download the data, even if
+                files already exist. If False, it will skip the downloading part if files
+                already exist locally. Defaults to False.
+            keep_files (bool, optional): If True, downloaded files are kept after import.
+                Defaults to False.
+        Returns:
+            Dict[str, int]: table=key and number of inserted=value
+        """
         self.create_db()
         imported = {}
-        if not self.path_data_folder:
+        if not self.path_data_folder or force_download:
             self.path_data_folder = download_and_unzip(self.force_download)
 
         self.recreate_db()
@@ -96,7 +129,8 @@ class DbManager:
             if not number_of_imported_rows is None:
                 imported[model.__tablename__] = number_of_imported_rows
 
-        if self.path_data_folder == DEFAULT_PATH_UNZIPPED_DATA_FOLDER:
+        if not keep_files:
+            shutil.rmtree(self.path_data_folder)
             shutil.rmtree(DEFAULT_PATH_UNZIPPED_DATA_FOLDER)
 
         logger.info("Data imported: %s", imported)
@@ -156,8 +190,41 @@ class DbManager:
                 self.engine,
                 if_exists="append",
                 index=False,
+                chunksize=100000,
             )
         else:
             raise FileNotFoundError(
                 "No import folder exists. Init with `auto_load_data=True` or set `path_data_folder`"
             )
+
+
+def import_data(
+    engine: Optional[Engine] = None,
+    force_download: bool = False,
+    keep_files: bool = False,
+) -> dict[str, int]:
+    """Import all data in database.
+
+    Args:
+        engine (Optional[Engine]): SQLAlchemy engine. Defaults to None.
+        force_download (bool, optional): If True, will force download the data, even if
+            files already exist. If False, it will skip the downloading part if files
+            already exist locally. Defaults to False.
+        keep_files (bool, optional): If True, downloaded files are kept after import.
+            Defaults to False.
+
+    Returns:
+        Dict[str, int]: table=key and number of inserted=value
+    """
+    db_manager = DbManager(engine)
+    return db_manager.import_data(force_download=force_download, keep_files=keep_files)
+
+
+def get_session(engine: Optional[Engine] = None) -> Session:
+    """Get a new SQLAlchemy session.
+
+    Returns:
+        Session: SQLAlchemy session
+    """
+    db_manager = DbManager(engine)
+    return db_manager.session
