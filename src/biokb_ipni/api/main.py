@@ -1,5 +1,4 @@
 # main.py
-import json
 import logging
 import os
 import re
@@ -10,6 +9,7 @@ from difflib import SequenceMatcher
 from typing import Annotated, List, Optional, Union, get_args, get_origin
 
 import Levenshtein
+import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -64,6 +64,15 @@ app.add_middleware(
     allow_methods=["*"],  # Allows all methods
     allow_headers=["*"],  # Allows all headers
 )
+
+
+def run_server(host: str = "0.0.0.0", port: int = 8000) -> None:
+    uvicorn.run(
+        app="biokb_ipni.api.main:app",
+        host=host,
+        port=port,
+        log_level="warning",
+    )
 
 
 def verify_credentials(credentials: HTTPBasicCredentials = Depends(HTTPBasic())):
