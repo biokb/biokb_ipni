@@ -1,7 +1,7 @@
 """Module defining the database models for the biokb_ipni application."""
 
 from datetime import date as date_type
-from typing import Optional
+from typing import Any, Optional
 
 from sqlalchemy import Date, ForeignKey, String, Text
 from sqlalchemy.dialects.mysql import VARCHAR
@@ -12,6 +12,31 @@ from biokb_ipni.constants import PROJECT_NAME
 
 class Base(DeclarativeBase):
     _prefix = PROJECT_NAME + "_"
+
+
+class Location(Base):
+    """Location model representing geographical locations in the database.
+
+    Attributes:
+        id (int): Primary key identifier for the location.
+        locality (Optional[str]): Locality description of the location.
+        latitude (Optional[float]): Latitude coordinate of the location.
+        longitude (Optional[float]): Longitude coordinate of the location.
+    """
+
+    __tablename__ = Base._prefix + "location"
+
+    id: Mapped[int] = mapped_column(autoincrement=True, primary_key=True)
+
+    locality: Mapped[Optional[str]] = mapped_column(
+        Text, comment="Locality description of the location"
+    )
+    latitude: Mapped[Optional[float]] = mapped_column(
+        comment="Latitude coordinate of the location"
+    )
+    longitude: Mapped[Optional[float]] = mapped_column(
+        comment="Longitude coordinate of the location"
+    )
 
 
 class Name(Base):
@@ -25,7 +50,6 @@ class Name(Base):
         status (str): Status of the name (e.g., accepted, synonym).
         published_in_year (Optional[int]): Year the name was published.
         published_in_page (Optional[int]): Page number where the name was published.
-        link (str): Unique link associated with the name.
         remarks (Optional[str]): Additional remarks about the name.
         reference_id (Optional[str]): Foreign key to the associated reference.
         taxon (Taxon): Relationship to the associated taxon.
@@ -35,16 +59,29 @@ class Name(Base):
 
     __tablename__ = Base._prefix + "name"
 
-    id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    id: Mapped[str] = mapped_column(
+        String(255), primary_key=True, comment="Primary key identifier for the name"
+    )
 
-    rank: Mapped[str] = mapped_column(String(255))
-    scientific_name: Mapped[str] = mapped_column(String(255), index=True)
-    authorship: Mapped[Optional[str]] = mapped_column(String(255))
-    status: Mapped[str] = mapped_column(String(255))
-    published_in_year: Mapped[Optional[int]]
-    published_in_page: Mapped[Optional[int]]
-    link: Mapped[str] = mapped_column(String(255), unique=True)
-    remarks: Mapped[Optional[str]] = mapped_column(Text)
+    rank: Mapped[str] = mapped_column(String(255), comment="Taxonomic rank of the name")
+    scientific_name: Mapped[str] = mapped_column(
+        String(255), index=True, comment="The scientific name"
+    )
+    authorship: Mapped[Optional[str]] = mapped_column(
+        String(255), comment="Authorship information for the name"
+    )
+    status: Mapped[str] = mapped_column(
+        String(255), comment="Status of the name (e.g., accepted, synonym)"
+    )
+    published_in_year: Mapped[Optional[int]] = mapped_column(
+        comment="Year the name was published"
+    )
+    published_in_page: Mapped[Optional[int]] = mapped_column(
+        comment="Page number where the name was published"
+    )
+    remarks: Mapped[Optional[str]] = mapped_column(
+        Text, comment="Additional remarks about the name"
+    )
 
     # foreign keys
     reference_id: Mapped[Optional[str]] = mapped_column(
@@ -52,15 +89,28 @@ class Name(Base):
             VARCHAR(255, collation="utf8mb4_bin"), "mysql", "mariadb"
         ),
         ForeignKey(Base._prefix + "reference.id"),
+        comment="Foreign key to the associated reference",
     )
+    family_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey(Base._prefix + "family.id", comment="Foreign key to the family"),
+        comment="Foreign key to the family",
+    )
+    tax_id: Mapped[Optional[int]] = mapped_column(
+        comment="NCBI Taxon ID associated with the name"
+    )
+
     # relationships
-    taxon: Mapped["Taxon"] = relationship(back_populates="name")
+    family: Mapped["Family"] = relationship(back_populates="names")
     reference: Mapped["Reference"] = relationship(back_populates="names")
     type_materials: Mapped[list["TypeMaterial"]] = relationship(back_populates="name")
 
-    # name_relations: Mapped[list["NameRelation"]] = relationship(
-    #     foreign_keys="name_relation.id", back_populates="name"
-    # )
+    @property
+    def family_name(self) -> str:
+        """Get the family name associated with this name."""
+        return self.family.family if self.family else ""
+
+    def __repr__(self) -> str:
+        return f"<Name:id={self.id!r}, scientific_name={self.scientific_name!r}>"
 
 
 class Reference(Base):
@@ -90,55 +140,87 @@ class Reference(Base):
             VARCHAR(255, collation="utf8mb4_bin"), "mysql", "mariadb"
         ),
         primary_key=True,
+        comment="Primary key identifier for the reference",
     )
 
-    doi: Mapped[Optional[str]] = mapped_column(String(255))
-    alternative_id: Mapped[Optional[str]] = mapped_column(String(255))
-    citation: Mapped[Optional[str]] = mapped_column(String(255))
-    title: Mapped[str] = mapped_column(Text)
-    author: Mapped[Optional[str]] = mapped_column(String(255))
-    issued: Mapped[Optional[str]] = mapped_column(Text)
-    volume: Mapped[Optional[str]] = mapped_column(String(255))
-    issue: Mapped[Optional[str]] = mapped_column(String(255))
-    page: Mapped[Optional[str]] = mapped_column(String(255))
-    issn: Mapped[Optional[str]] = mapped_column(String(255))
-    isbn: Mapped[Optional[str]] = mapped_column(String(255))
-    link: Mapped[Optional[str]] = mapped_column(String(255))
-    remarks: Mapped[Optional[str]] = mapped_column(Text)
+    doi: Mapped[Optional[str]] = mapped_column(
+        String(255), comment="Digital Object Identifier for the reference"
+    )
+    alternative_id: Mapped[Optional[str]] = mapped_column(
+        String(255), comment="Alternative identifier for the reference"
+    )
+    citation: Mapped[Optional[str]] = mapped_column(
+        String(255), comment="Citation string for the reference"
+    )
+    title: Mapped[str] = mapped_column(Text, comment="Title of the reference")
+    author: Mapped[Optional[str]] = mapped_column(
+        String(255), comment="Author(s) of the reference"
+    )
+    issued: Mapped[Optional[str]] = mapped_column(
+        Text, comment="Publication date of the reference"
+    )
+    volume: Mapped[Optional[str]] = mapped_column(
+        String(255), comment="Volume number of the reference"
+    )
+    issue: Mapped[Optional[str]] = mapped_column(
+        String(255), comment="Issue number of the reference"
+    )
+    page: Mapped[Optional[str]] = mapped_column(
+        String(255), comment="Page numbers of the reference"
+    )
+    issn: Mapped[Optional[str]] = mapped_column(
+        String(255), comment="ISSN of the reference"
+    )
+    isbn: Mapped[Optional[str]] = mapped_column(
+        String(255), comment="ISBN of the reference"
+    )
+    link: Mapped[Optional[str]] = mapped_column(
+        String(255), comment="URL link to the reference"
+    )
+    remarks: Mapped[Optional[str]] = mapped_column(
+        Text, comment="Additional remarks about the reference"
+    )
+
+    @property
+    def name_ids(self) -> list[str]:
+        """Get a list of associated name IDs."""
+        return [name.id for name in self.names]
 
     # relationships
     names: Mapped[list[Name]] = relationship(back_populates="reference")
 
+    def __repr__(self) -> str:
+        return f"<Reference:id={self.id!r}, title={self.title!r}>"
 
-class Taxon(Base):
-    """Taxon model representing taxonomic information in the database.
+
+class Family(Base):
+    """Family model representing family information in the database.
 
     Attributes:
-        id (str): Primary key identifier for the taxon.
-        provisional (bool): Indicates if the taxon is provisional.
-        status (Optional[str]): Status of the taxon.
-        family (Optional[str]): Family to which the taxon belongs.
-        link (Optional[str]): URL link associated with the taxon.
-        name_id (Optional[str]): Foreign key to the associated name.
-        name (Name): Relationship to the associated name.
+        id (str): Primary key identifier for the family.
+        family_name (str): Name of the family.
     """
 
-    __tablename__ = Base._prefix + "taxon"
+    __tablename__ = Base._prefix + "family"
 
-    id: Mapped[str] = mapped_column(String(255), primary_key=True)
-
-    provisional: Mapped[bool]
-    status: Mapped[Optional[str]] = mapped_column(String(255))
-    family: Mapped[Optional[str]] = mapped_column(String(255))
-    link: Mapped[Optional[str]] = mapped_column(String(255))
-
-    # foreign keys
-    name_id: Mapped[Optional[str]] = mapped_column(
-        String(255), ForeignKey(Base._prefix + "name.id")
+    id: Mapped[str] = mapped_column(
+        String(255), primary_key=True, comment="Primary key identifier for the family"
+    )
+    family: Mapped[str] = mapped_column(String(255), comment="Name of the family")
+    tax_id: Mapped[Optional[int]] = mapped_column(
+        comment="NCBI Taxon ID associated with the family"
     )
 
     # relationships
-    name: Mapped[Name] = relationship(back_populates="taxon")
+    names: Mapped[list[Name]] = relationship(back_populates="family")
+
+    @property
+    def name_ids(self) -> list[str]:
+        """Get a list of associated name IDs."""
+        return [name.id for name in self.names]
+
+    def __repr__(self) -> str:
+        return f"<Family:id={self.id!r}, family={self.family!r}>"
 
 
 class NameRelation(Base):
@@ -157,18 +239,25 @@ class NameRelation(Base):
 
     id: Mapped[int] = mapped_column(autoincrement=True, primary_key=True)
 
-    type: Mapped[str] = mapped_column(String(255))
+    type: Mapped[str] = mapped_column(
+        String(255), comment="Type of relationship between the names"
+    )
 
     # foreign keys
     related_name_id: Mapped[Optional[str]] = mapped_column(
-        String(255), ForeignKey(Base._prefix + "name.id")
+        String(255),
+        ForeignKey(Base._prefix + "name.id", comment="Foreign key to the related name"),
     )
     name_id: Mapped[Optional[str]] = mapped_column(
-        String(255), ForeignKey(Base._prefix + "name.id")
+        String(255),
+        ForeignKey(Base._prefix + "name.id", comment="Foreign key to the primary name"),
     )
     # relationships
     related_name: Mapped[Name] = relationship(foreign_keys=[related_name_id])
     name: Mapped[Name] = relationship(foreign_keys=[name_id])
+
+    def __repr__(self) -> str:
+        return f"<NameRelation:id={self.id!r}, type={self.type!r}, name_id={self.name_id!r}, related_name_id={self.related_name_id!r}>"
 
 
 class TypeMaterial(Base):
@@ -194,21 +283,37 @@ class TypeMaterial(Base):
 
     id: Mapped[int] = mapped_column(autoincrement=True, primary_key=True)
 
-    citation: Mapped[Optional[str]] = mapped_column(String(255))
-    status: Mapped[Optional[str]] = mapped_column(String(255))
-    institution_code: Mapped[Optional[str]] = mapped_column(String(255))
-    catalog_number: Mapped[Optional[str]] = mapped_column(String(255))
-    collector: Mapped[Optional[str]] = mapped_column(String(255))
-    date: Mapped[Optional[date_type]] = mapped_column(Date)
-    locality: Mapped[Optional[str]] = mapped_column(Text)
-    latitude: Mapped[Optional[float]]
-    longitude: Mapped[Optional[float]]
-    remarks: Mapped[Optional[str]] = mapped_column(Text)
-
+    citation: Mapped[Optional[str]] = mapped_column(
+        String(255), comment="Citation for the type material"
+    )
+    status: Mapped[Optional[str]] = mapped_column(
+        String(255), comment="Status of the type material"
+    )
+    institution_code: Mapped[Optional[str]] = mapped_column(
+        String(255), comment="Institution code where the type material is held"
+    )
+    catalog_number: Mapped[Optional[str]] = mapped_column(
+        String(255), comment="Catalog number of the type material"
+    )
+    collector: Mapped[Optional[str]] = mapped_column(
+        String(255), comment="Collector of the type material"
+    )
+    date: Mapped[Optional[date_type]] = mapped_column(
+        Date, comment="Date of collection of the type material"
+    )
+    remarks: Mapped[Optional[str]] = mapped_column(
+        Text, comment="Additional remarks about the type material"
+    )
     # foreign keys
     name_id: Mapped[str] = mapped_column(
         String(255), ForeignKey(Base._prefix + "name.id"), nullable=False
     )
+    location_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey(Base._prefix + "location.id"), comment="Foreign key to the location"
+    )
 
     # relationships
     name: Mapped[Name] = relationship(back_populates="type_materials")
+
+    def __repr__(self) -> str:
+        return f"<TypeMaterial:id={self.id!r}, status={self.status!r}, institution_code={self.institution_code!r}>"
