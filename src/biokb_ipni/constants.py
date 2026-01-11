@@ -1,6 +1,7 @@
 """Basic constants."""
 
 import os
+from collections import defaultdict
 from enum import StrEnum
 from pathlib import Path
 
@@ -28,7 +29,23 @@ os.makedirs(DATA_FOLDER, exist_ok=True)
 # not standard for all biokb projects
 DOWNLOAD_URL = "https://hosted-datasets.gbif.org/datasets/ipni.zip"
 PATH_TO_ZIP_FILE = os.path.join(DATA_FOLDER, "ipni.zip")
-DEFAULT_PATH_UNZIPPED_DATA_FOLDER = os.path.join(DATA_FOLDER, "unzipped")
+
+TAXTREE_DOWNLOAD_URL = (
+    "https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/new_taxdump/new_taxdump.zip"
+)
+TAXTREE_DATA_FOLDER = os.path.join(BIOKB_FOLDER, "taxtree", "data")
+PATH_TO_TAXTREE_ZIP_FILE = os.path.join(TAXTREE_DATA_FOLDER, "new_taxdump.zip")
+RANKED_LINEAGE_DTYPES: defaultdict[str, str] = defaultdict(
+    str,
+    {
+        "tax_id": "int32",
+        "tax_name": "string",
+        "phylum": "string",
+    },
+)
+
+RANKED_LINEAGE_COLUMNS = list(RANKED_LINEAGE_DTYPES.keys())
+
 
 class TsvFileName(StrEnum):
     NAME = "Name.tsv"

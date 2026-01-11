@@ -1,23 +1,8 @@
-import logging
-import os
+import datetime
 import re
-import urllib.request
-import zipfile
 from typing import Any, Iterable
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-import datetime
-
 import pandas as pd
-
-from biokb_ipni.constants import (
-    DATA_FOLDER,
-    DEFAULT_PATH_UNZIPPED_DATA_FOLDER,
-    DOWNLOAD_URL,
-    PATH_TO_ZIP_FILE,
-)
 
 
 def get_standard_column_name(column_name: str) -> str:
@@ -97,24 +82,3 @@ def parse_date(date):
             return datetime.date(year, month, day)
         else:
             return pd.NaT  # If format is unknown
-
-
-def download_and_unzip(force_download: bool = False) -> str:
-    """Download IPNI data in local download folder, unzipped and return path.
-
-    Args:
-        force (bool, optional): Force to download the file. Defaults to False.
-
-    Returns:
-        str: _description_
-    """
-    os.makedirs(DATA_FOLDER, exist_ok=True)
-    if force_download or not os.path.exists(PATH_TO_ZIP_FILE):
-        urllib.request.urlretrieve(DOWNLOAD_URL, PATH_TO_ZIP_FILE)
-        logger.info(f"{DOWNLOAD_URL} downloaded to {PATH_TO_ZIP_FILE}")
-
-    with zipfile.ZipFile(PATH_TO_ZIP_FILE, "r") as zip_ref:
-        os.makedirs(DEFAULT_PATH_UNZIPPED_DATA_FOLDER, exist_ok=True)
-        zip_ref.extractall(DEFAULT_PATH_UNZIPPED_DATA_FOLDER)
-
-    return DEFAULT_PATH_UNZIPPED_DATA_FOLDER

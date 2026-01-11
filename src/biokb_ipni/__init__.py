@@ -1,5 +1,6 @@
 from importlib.metadata import PackageNotFoundError, version
 
+from biokb_ipni.db import models
 from biokb_ipni.db.manager import DbManager, get_session, import_data
 from biokb_ipni.rdf.neo4j_importer import Neo4jImporter, import_ttls
 from biokb_ipni.rdf.turtle import TurtleCreator, create_ttls
@@ -18,4 +19,5 @@ __all__ = [
     "import_ttls",
     "TurtleCreator",
     "create_ttls",
+    "models",
 ]

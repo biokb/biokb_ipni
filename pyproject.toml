@@ -17,6 +17,8 @@ dependencies = [
     "rdflib>=7.5.0",
     "rdflib-neo4j>=1.1",
     "tqdm>=4.67.1",
+    "levenshtein>=0.27.3",
+    "jellyfish>=1.0.0",
 ]
 requires-python = ">=3.12"
 readme = "README.md"
@@ -40,7 +42,7 @@ dev = [
     "twine>=6.2.0",
 ]
 docs = [
-    "eralchemy[graphviz]>=1.5.0",
+    "eralchemy2>=1.4.1",
     "mkdocs-jupyter>=0.25.1",
     "mkdocs-material>=9.7.1",
 ]

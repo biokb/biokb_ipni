@@ -1,14 +1,13 @@
 import os
 from typing import Generator
 
-from sqlalchemy.orm.session import Session
-
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm.session import Session
 
-from biokb_ipni.api.main import app, get_db
+from biokb_ipni.api.main import app, get_session
 from biokb_ipni.db.manager import DbManager
 
 # Create a new test database engine (SQLite in-memory for testing)
@@ -26,7 +25,7 @@ def override_get_db() -> Generator[Session, None, None]:
 
 
 # Apply the override to the FastAPI dependency
-app.dependency_overrides[get_db] = override_get_db
+app.dependency_overrides[get_session] = override_get_db
 
 
 @pytest.fixture()
@@ -129,7 +128,9 @@ class TestNameRelation:
         assert response.status_code == 200
         assert len(response.json()) == 1
 
-    def test_list_name_relation_offset_limit(self, client_with_data: TestClient) -> None:
+    def test_list_name_relation_offset_limit(
+        self, client_with_data: TestClient
+    ) -> None:
         response = client_with_data.get("/name_relations/?offset=1&limit=1")
         assert response.status_code == 200
         data = response.json()
@@ -291,7 +292,9 @@ class TestTypeMaterial:
         assert response.status_code == 200
         assert len(response.json()) == 3
 
-    def test_list_type_materials_offset_limit(self, client_with_data: TestClient) -> None:
+    def test_list_type_materials_offset_limit(
+        self, client_with_data: TestClient
+    ) -> None:
         response = client_with_data.get("/type_materials/?offset=2&limit=1")
         assert response.status_code == 200
         data = response.json()

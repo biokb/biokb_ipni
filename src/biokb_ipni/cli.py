@@ -48,7 +48,7 @@ def main():
     default=f"sqlite:///{PROJECT_NAME}.db",
     help=f"SQLAlchemy engine URL [default: sqlite:///{PROJECT_NAME}.db]",
 )
-def import_data(force_download: bool, connection_string: str):
+def import_data(force_download: bool, connection_string: str, keep_files: bool):
     """Import data.
 
     Args:
@@ -57,7 +57,9 @@ def import_data(force_download: bool, connection_string: str):
         keep_files (bool): Keep downloaded source files after import (default: False)
     """
     engine = create_engine(connection_string)
-    DbManager(engine=engine).import_data(force_download=force_download)
+    DbManager(engine=engine).import_data(
+        force_download=force_download, keep_files=keep_files
+    )
     click.echo(f"Data imported successfully to {connection_string}")
 
 
@@ -121,7 +123,8 @@ def run_api(
     # set env variables for API authentication
     os.environ["API_USER"] = user
     os.environ["API_PASSWORD"] = password
-    click.echo(f"API server running at http://{host}:{port}/docs#/")
+    host_shown = "127.0.0.1" if host == "0.0.0.0" else host
+    click.echo(f"API server running at http://{host_shown}:{port}/docs#/")
     run_server(host=host, port=port)
 
 
