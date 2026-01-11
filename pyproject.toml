@@ -37,6 +37,11 @@ keywords = ["knowledge graph", "knowledge base", "ethnobotany", "taxonomy", "pla
 readme = "README.md"
 license = {text = "MIT"}
 
+[project.urls]
+Homepage = "https://github.com/biokb/biokb_ipni"
+Repository = "https://github.com/biokb/biokb_ipni"
+Documentation = "https://biokb-ipni.readthedocs.io"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

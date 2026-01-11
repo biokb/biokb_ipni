@@ -1,10 +1,10 @@
 ![docs/imgs/](https://raw.githubusercontent.com/biokb/biokb_ipni/refs/heads/main/docs/imgs/biokb_logo_writing.png)
 # BioKb-IPNI
 
-![](https://img.shields.io/pypi/v/biokb_ipni?color=blue&label=biokb_ipni&style=flat-square)
-![](https://img.shields.io/pypi/pyversions/biokb_ipni?style=flat-square)
-![](https://img.shields.io/pypi/l/biokb_ipni?style=flat-square)
-
+![](https://img.shields.io/pypi/v/biokb_ipni?style=flat-square)
+![](https://img.shields.io/pypi/pyversions/biokb-ipni?style=flat-square)
+![](https://img.shields.io/github/actions/workflow/status/biokb/biokb_ipni/pypi-publish.yml?style=flat-square)
+![](https://img.shields.io/github/license/biokb/biokb_ipni?style=flat-square)
 
 
 BioKb-IPNI (biokb_ipni) is a python package to import IPNI data into a relational database and create RDF triples (turtles) from it. The turtles can be imported into a Neo4J graph database. The package is part of the [BioKb family of packages](https://github.com/biokb) to create and connect biological and medical knowledge bases and graphs.
