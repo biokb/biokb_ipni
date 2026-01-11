@@ -1,8 +1,50 @@
 # schemas.py
 from datetime import date as date_type
-from typing import List, Optional
+from typing import Annotated, Literal, Optional
+from unittest.mock import Base
 
-from pydantic import BaseModel, ConfigDict
+from neo4j import Query
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class OffsetLimit(BaseModel):
+    limit: Annotated[int, Field(le=100)] = 10
+    offset: int = 0
+
+
+class CountOffsetLimit(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    count: int
+    offset: int
+    limit: int
+
+
+# -------------------------------------------------------------------
+# Location Schemas
+# -------------------------------------------------------------------
+class LocationBase(BaseModel):
+    locality: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+
+
+class Location(LocationBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+
+
+class LocationSearch(OffsetLimit):
+    """Fields for searching location records."""
+
+    id: Optional[int] = None
+    locality: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+
+
+class LocationSearchResult(CountOffsetLimit):
+    results: list[Location]
 
 
 # -------------------------------------------------------------------
@@ -17,7 +59,6 @@ class NameBase(BaseModel):
     status: Optional[str]
     published_in_year: Optional[int]
     published_in_page: Optional[int]
-    link: Optional[str]
     remarks: Optional[str]
     reference_id: Optional[str] = None
 
@@ -30,7 +71,7 @@ class Name(NameBase):
     id: str
 
 
-class NameSearch(BaseModel):
+class NameSearch(OffsetLimit):
     """Fields for search."""
 
     id: Optional[str] = None
@@ -40,9 +81,15 @@ class NameSearch(BaseModel):
     status: Optional[str] = None
     published_in_year: Optional[int] = None
     published_in_page: Optional[int] = None
-    link: Optional[str] = None
     remarks: Optional[str] = None
     reference_id: Optional[str] = None
+
+
+class NameSearchResult(BaseModel):
+    calculate_with: Literal["exact", "levenshtein", "metaphone_jaro", "pattern_match"]
+    scientific_name: str
+    ipni_id: str
+    similarity: float = Field(le=1.0)
 
 
 # -------------------------------------------------------------------
@@ -70,7 +117,6 @@ class ReferenceBase(BaseModel):
     doi: Optional[str] = None
     alternative_id: Optional[str] = None
     citation: Optional[str] = None
-    title: str
     author: Optional[str] = None
     issued: Optional[str] = None
     volume: Optional[str] = None
@@ -84,63 +130,52 @@ class ReferenceBase(BaseModel):
 
 class ReferenceCreate(ReferenceBase):
     id: str
+    title: str
 
 
 class Reference(ReferenceBase):
+    id: str
+    title: str
+    name_ids: list[str]
+
     model_config = ConfigDict(from_attributes=True)
 
-    id: str
 
-
-class ReferenceSearch(BaseModel):
+class ReferenceSearch(ReferenceBase, OffsetLimit):
     """Fields for searching references."""
 
     id: Optional[str] = None
-    doi: Optional[str] = None
-    alternative_id: Optional[str] = None
-    citation: Optional[str] = None
     title: Optional[str] = None
-    author: Optional[str] = None
-    issued: Optional[str] = None
-    volume: Optional[str] = None
-    issue: Optional[str] = None
-    page: Optional[str] = None
-    issn: Optional[str] = None
-    isbn: Optional[str] = None
-    link: Optional[str] = None
-    remarks: Optional[str] = None
+
+
+class ReferenceSearchResult(CountOffsetLimit):
+    results: list[Reference]
 
 
 # -------------------------------------------------------------------
-# Taxon Schemas
+# Family Schemas
 # -------------------------------------------------------------------
-class TaxonBase(BaseModel):
-    provisional: bool
-    status: Optional[str] = None
+class FamilyBase(BaseModel):
     family: str
-    link: Optional[str] = None
-    name_id: Optional[str] = None
+    tax_id: Optional[int] = None
 
 
-class TaxonCreate(TaxonBase):
+class Family(FamilyBase):
     id: str
 
-
-class Taxon(TaxonBase):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: str
+    # model_config = ConfigDict(from_attributes=True)
 
 
-class TaxonSearch(BaseModel):
-    """Fields for searching taxon records."""
+class FamilySearch(OffsetLimit):
+    """Fields for searching family records."""
 
     id: Optional[str] = None
-    provisional: Optional[bool] = None
-    status: Optional[str] = None
     family: Optional[str] = None
-    link: Optional[str] = None
-    name_id: Optional[str] = None
+    tax_id: Optional[int] = None
+
+
+class FamilySearchResult(CountOffsetLimit):
+    results: list[Family]
 
 
 # -------------------------------------------------------------------
@@ -163,13 +198,17 @@ class NameRelation(NameRelationBase):
     id: int
 
 
-class NameRelationSearch(BaseModel):
+class NameRelationSearch(OffsetLimit):
     """Fields for searching name relations."""
 
     id: Optional[int] = None
     type: Optional[str] = None
     related_name_id: Optional[str] = None
     name_id: Optional[str] = None
+
+
+class NameRelationSearchResult(OffsetLimit):
+    results: list[NameRelation]
 
 
 # -------------------------------------------------------------------
@@ -182,24 +221,18 @@ class TypeMaterialBase(BaseModel):
     catalog_number: Optional[str] = None
     collector: Optional[str] = None
     date: Optional[date_type] = None
-    locality: Optional[str] = None
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
     remarks: Optional[str] = None
     name_id: str
-
-
-class TypeMaterialCreate(TypeMaterialBase):
-    pass
 
 
 class TypeMaterial(TypeMaterialBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    location_id: Optional[int] = None
 
 
-class TypeMaterialSearch(BaseModel):
+class TypeMaterialSearch(OffsetLimit):
     """Fields for searching type material records."""
 
     id: Optional[int] = None
@@ -214,3 +247,7 @@ class TypeMaterialSearch(BaseModel):
     longitude: Optional[float] = None
     remarks: Optional[str] = None
     name_id: Optional[str] = None
+
+
+class TypeMaterialSearchResult(OffsetLimit):
+    results: list[TypeMaterial]

@@ -1,30 +1,37 @@
-# main.py
 import logging
 import os
 import re
 import secrets
-from datetime import date, datetime
-from decimal import Decimal
+from contextlib import asynccontextmanager
 from difflib import SequenceMatcher
-from typing import Annotated, List, Optional, Union, get_args, get_origin
+from typing import Annotated, AsyncGenerator, List
 
+import jellyfish
 import Levenshtein
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi import Body, Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from pydantic import BaseModel
-from sqlalchemy import and_, create_engine, not_, or_, select
+from sqlalchemy import Engine, create_engine, or_, select
 from sqlalchemy.orm import Session
 
 # from database import SessionLocal
 from sqlalchemy.sql import text
 
 from biokb_ipni.api import schemas
+from biokb_ipni.api.query_tools import SASearchResults, build_dynamic_query
 from biokb_ipni.api.tags import Tag
-from biokb_ipni.constants import DB_DEFAULT_CONNECTION_STR
-from biokb_ipni.db import models
-from biokb_ipni.db.manager import DbManager
+from biokb_ipni.constants import (
+    DB_DEFAULT_CONNECTION_STR,
+    NEO4J_PASSWORD,
+    NEO4J_URI,
+    NEO4J_USER,
+    ZIPPED_TTLS_PATH,
+)
+from biokb_ipni.db import manager, models
+from biokb_ipni.rdf.neo4j_importer import Neo4jImporter
+from biokb_ipni.rdf.turtle import TurtleCreator
 
 # Configure logging
 logging.basicConfig(
@@ -35,27 +42,39 @@ logger = logging.getLogger(__name__)
 USERNAME = os.environ.get("API_USERNAME", "admin")
 PASSWORD = os.environ.get("API_PASSWORD", "admin")
 
-# 1) Configure Database
-SQLALCHEMY_DATABASE_URL = os.getenv("CONNECTION_STR", DB_DEFAULT_CONNECTION_STR)
 
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
+def get_engine() -> Engine:
+    conn_url = os.environ.get("CONNECTION_STR", DB_DEFAULT_CONNECTION_STR)
+    engine: Engine = create_engine(conn_url)
+    return engine
 
 
-def get_db():
-    dbm = DbManager(engine=engine)
-    session = dbm.Session()
+def get_session():
+    engine: Engine = get_engine()
+    session = Session(bind=engine)
     try:
         yield session
     finally:
         session.close()
 
 
-# 3) Create FastAPI App
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Initialize app resources on startup and cleanup on shutdown."""
+    engine = get_engine()
+    manager.DbManager(engine)
+    yield
+    # Clean up resources if needed
+    pass
+
+
 app = FastAPI(
     title="IPNI Data API",
     description="RestfulAPI for IPNI-based data. <br><br>Reference: https://www.ipni.org/",
     version="0.1.0",
+    lifespan=lifespan,
 )
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -86,99 +105,118 @@ def verify_credentials(credentials: HTTPBasicCredentials = Depends(HTTPBasic()))
         )
 
 
-def build_dynamic_query(
-    search_obj: BaseModel,
-    model_cls,
-    db: Session,
-    limit: Optional[int] = None,  # default limit for pagination
-    offset: Optional[int] = None,  # default offset for pagination
-):
-    """
-    Build and execute a SQLAlchemy 2.0-style SELECT based on the non-None
-    attributes of a Pydantic model instance.  The operator is inferred from
-    each field's *declared* type, not the runtime value.
-    """
-    filters = []
-
-    # Only the attributes the client actually supplied (`exclude_none`)
-    payload = search_obj.model_dump(exclude_none=True)
-
-    for field_name, value in payload.items():
-
-        # Skip if the SQLAlchemy model has no matching column / hybrid attr
-        if not hasattr(model_cls, field_name):
-            continue
-        column = getattr(model_cls, field_name)
-
-        # ↓ The type you wrote in the Pydantic model definition
-        declared_type = search_obj.__pydantic_fields__[field_name].annotation
-        # Handle Optional types (e.g., Optional[str] or Union[str, None])
-        if get_origin(declared_type) is Union:
-            args = [arg for arg in get_args(declared_type) if arg is not type(None)]
-            if args:
-                declared_type = args[0]
-        origin = get_origin(declared_type) or declared_type
-
-        # STRING ......................................................................
-        if origin is str:
-            logger.info("used string filter")
-            filters.append(column.like(value) if ("%" in value) else column == value)
-
-        # NUMBERS .....................................................................
-        elif origin in (int, float, Decimal):
-            filters.append(column == value)
-
-        # BOOLEANS ....................................................................
-        elif origin is bool:
-            filters.append(column.is_(value))
-
-        # DATE / DATETIME – supports equality or simple closed range ...................
-        elif origin in (date, datetime):
-            if isinstance(value, (list, tuple)) and len(value) == 2:
-                filters.append(column.between(value[0], value[1]))
-            else:
-                filters.append(column == value)
-
-        # FALLBACK .....................................................................
-        else:
-            logger.warning(
-                f"Unsupported type for field '{field_name}': {declared_type}. "
-                "Using equality operator as fallback."
-            )
-            filters.append(column == value)
-
-    stmt = select(model_cls).where(*filters)
-    if limit is not None:
-        stmt = stmt.limit(limit)
-    if offset is not None:
-        stmt = stmt.offset(offset)
-
-    logger.info(stmt.compile(compile_kwargs={"literal_binds": True}))
-
-    return db.execute(stmt).scalars().all()
-
-
 ###############################################################################
-# Manage
+# Database Management
 ###############################################################################
-@app.get("/", tags=["Manage"])
-def check_status() -> dict:
-    return {"msg": "Running!"}
-
-
-@app.get("/import_data/", tags=["Manage"])
-def import_data(
+@app.post(
+    path="/import_data/",
+    response_model=dict[str, int],
+    tags=[Tag.DB_MANAGE],
+)
+async def import_data(
     credentials: HTTPBasicCredentials = Depends(verify_credentials),
-    session: Session = Depends(get_db),
-):
-    return DbManager(engine=engine).import_data()
+    force_download: bool = Query(
+        False,
+        description=(
+            "Whether to re-download data files even if they already exist,"
+            " ensuring the newest version."
+        ),
+    ),
+    keep_files: bool = Query(
+        True,
+        description=(
+            "Whether to keep the downloaded files"
+            " after importing them into the database."
+        ),
+    ),
+) -> dict[str, int]:
+    """Download data (if not exists) and load in database.
+
+    Can take up to 15 minutes to complete.
+    """
+    try:
+        dbm = manager.DbManager()
+        result = dbm.import_data(force_download=force_download, keep_files=keep_files)
+    except Exception as e:
+        logger.error(f"Error importing data: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error importing data. {e}",
+        ) from e
+    return result
+
+
+@app.get("/export_ttls/", tags=[Tag.DB_MANAGE])
+async def get_report(
+    credentials: HTTPBasicCredentials = Depends(verify_credentials),
+    force_create: bool = Query(
+        False,
+        description="Whether to re-generate the TTL files even if they already exist.",
+    ),
+) -> FileResponse:
+
+    file_path = ZIPPED_TTLS_PATH
+    if not os.path.exists(file_path) or force_create:
+        try:
+            TurtleCreator().create_ttls()
+        except Exception as e:
+            logger.error(f"Error generating TTL files: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error generating TTL files. Data already imported?",
+            ) from e
+    return FileResponse(
+        path=file_path, filename="coconut_ttls.zip", media_type="application/zip"
+    )
+
+
+@app.get("/import_neo4j/", tags=[Tag.DB_MANAGE])
+async def import_neo4j(
+    credentials: HTTPBasicCredentials = Depends(verify_credentials),
+    uri: str | None = Query(
+        NEO4J_URI,
+        description="The Neo4j URI. If not provided, "
+        "the default from environment variable is used.",
+    ),
+    user: str | None = Query(
+        NEO4J_USER,
+        description="The Neo4j user. If not provided,"
+        " the default from environment variable is used.",
+    ),
+    password: str | None = Query(
+        NEO4J_PASSWORD,
+        description="The Neo4j password. If not provided,"
+        " the default from environment variable is used.",
+    ),
+) -> dict[str, str]:
+    """Import RDF turtle files in Neo4j."""
+    try:
+        if not os.path.exists(ZIPPED_TTLS_PATH):
+            raise HTTPException(
+                status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
+                detail=(
+                    "Zipped TTL files not found. Please "
+                    "generate them first using /export_ttls/ endpoint."
+                ),
+            )
+        importer = Neo4jImporter(neo4j_uri=uri, neo4j_user=user, neo4j_pwd=password)
+        importer.import_ttls()
+    except Exception as e:
+        logger.error(f"Error importing data into Neo4j: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error importing data into Neo4j: {e}",
+        ) from e
+    return {"status": "Neo4j import completed successfully."}
 
 
 ###############################################################################
 # Name
 ###############################################################################
 @app.get("/name/{name_id}", response_model=schemas.Name, tags=[Tag.NAME])
-def get_name(name_id: str, session: Session = Depends(get_db)) -> models.Name | None:
+async def get_name(
+    name_id: str, session: Session = Depends(get_session)
+) -> models.Name | None:
     obj = session.get(models.Name, name_id)
     if not obj:
         raise HTTPException(
@@ -188,139 +226,177 @@ def get_name(name_id: str, session: Session = Depends(get_db)) -> models.Name | 
     return obj
 
 
-@app.get("/names/find_similar", tags=[Tag.NAME])
-def names_find_similar(
-    session: Session = Depends(get_db),
-    name: str = Query(..., description="Name to search for"),
+@app.get(
+    "/names/find_similar",
+    response_model=list[schemas.NameSearchResult],
+    tags=[Tag.NAME],
+)
+async def names_find_similar(
+    session: Session = Depends(get_session),
+    search_for_name: str = Query(
+        ..., description="Name to search for", example="acHila meliflium"
+    ),
 ):
     """Fuzzy search for similar names using LEVENSHTEIN algorithm."""
-    name = re.sub(r"\s+", " ", name.strip())
-    name_splitted = [x.strip() for x in name.split(" ")]
+    search_for_name = re.sub(r"\s+", " ", search_for_name.strip())
+    name_splitted = [x.strip() for x in search_for_name.split(" ")]
 
     stmt = select(models.Name.scientific_name, models.Name.id).select_from(models.Name)
 
     # First, check for exact match
     # If an exact match is found, return it immediately.
     exact_results = session.execute(
-        stmt.where(models.Name.scientific_name == name)
+        stmt.where(models.Name.scientific_name == search_for_name)
     ).all()
     if exact_results:
         return_values = []
         for exact_result in exact_results:
             return_values.append(
-                {
-                    "calculate_with": "exact",
-                    "scientific_name": exact_result.scientific_name,
-                    "ipni_id": exact_result.id,
-                    "similarity": 1.0,  # Exact match
-                }
+                schemas.NameSearchResult(
+                    calculate_with="exact",
+                    scientific_name=exact_result.scientific_name,
+                    similarity=1.0,
+                    ipni_id=exact_result.id,
+                )
             )
         return return_values
 
-    # If no exact match, check for soundex match
-    # This is a phonetic algorithm for indexing names by sound, as pronounced in English.
-    stmt2 = stmt.where(text(f"SOUNDEX(scientific_name) = SOUNDEX('{name}')"))
-    results = session.execute(stmt2).all()
+    # If no exact match, use phonetic similarity with Metaphone algorithm
+    # Metaphone is better than soundex for non-English names including Latin scientific names
+    # Also try Jaro-Winkler which works well for scientific names with shared prefixes
+    name_metaphone = jellyfish.metaphone(search_for_name)
+    first_letter = search_for_name[0].upper()
 
-    ratios = []
-    if not results:
-        # If no exact or soundex match, use Levenshtein distance
+    # Get names that start with same letter to reduce the dataset for phonetic comparison
+    candidate_stmt = (
+        select(models.Name.scientific_name, models.Name.id)
+        .select_from(models.Name)
+        .where(models.Name.scientific_name.like(f"{first_letter}%"))
+    )
 
-        if len(name_splitted) < 2:
-            search_str = f"{name}%"
-        else:
-            search_str = f"{name_splitted[0]}% {name_splitted[1]}%"
-        stmt3 = (
-            select(models.Name.scientific_name, models.Name.id)
-            .select_from(models.Name)
-            .where(models.Name.scientific_name.like(search_str))
+    candidates = session.execute(candidate_stmt).all()
+
+    # Filter candidates by Metaphone similarity and Jaro-Winkler
+    phonetic_matches = []
+    for candidate in candidates:
+        candidate_metaphone = jellyfish.metaphone(candidate.scientific_name)
+
+        # Check if metaphone codes match
+        metaphone_match = name_metaphone == candidate_metaphone
+
+        # Also check Jaro-Winkler similarity for scientific names (good for genus/species prefixes)
+        jaro_similarity = jellyfish.jaro_winkler_similarity(
+            search_for_name.lower(), candidate.scientific_name.lower()
         )
-        results = session.execute(stmt3).all()
 
-        # check for similarity
+        if metaphone_match or jaro_similarity > 0.8:
+            # Calculate combined similarity score
+            sequence_ratio = SequenceMatcher(
+                None, search_for_name.lower(), candidate.scientific_name.lower()
+            ).ratio()
+            final_similarity = max(jaro_similarity, sequence_ratio)
 
-        for result in results:
-
-            ratio = SequenceMatcher(None, name, result.scientific_name).ratio()
-            if ratio > 0.3:  # Threshold for similarity
-                ratios.append(
-                    {
-                        "calculate_with": "soundex",
-                        "scientific_name": result.scientific_name,
-                        "ipni_id": result.id,
-                        "similarity": round(ratio, 2),  # Convert to percentage
-                    }
+            if final_similarity > 0.5:
+                phonetic_matches.append(
+                    schemas.NameSearchResult(
+                        calculate_with="metaphone_jaro",
+                        scientific_name=candidate.scientific_name,
+                        ipni_id=candidate.id,
+                        similarity=round(final_similarity, 2),
+                    )
                 )
-        if ratios:
-            return sorted(ratios, key=lambda x: x["similarity"], reverse=True)
+
+    if phonetic_matches:
+        return sorted(phonetic_matches, key=lambda x: x.similarity, reverse=True)[:30]
+
+    results = []
+    ratios = []
+    # If no phonetic matches, fall back to pattern-based search with Levenshtein distance
+
+    if len(name_splitted) < 2:
+        search_str = f"{search_for_name}%"
+    else:
+        search_str = f"{name_splitted[0]}% {name_splitted[1]}%"
+    stmt3 = (
+        select(models.Name.scientific_name, models.Name.id)
+        .select_from(models.Name)
+        .where(models.Name.scientific_name.like(search_str))
+    )
+    results = session.execute(stmt3).all()
+
+    # check for similarity
+
+    for result in results:
+        ratio = SequenceMatcher(None, search_for_name, result.scientific_name).ratio()
+        if ratio > 0.3:  # Threshold for similarity
+            ratios.append(
+                schemas.NameSearchResult(
+                    calculate_with="pattern_match",
+                    scientific_name=result.scientific_name,
+                    ipni_id=result.id,
+                    similarity=round(ratio, 2),
+                )
+            )
+    if ratios:
+        return sorted(ratios, key=lambda x: x.similarity, reverse=True)
 
     # if no results Levenshtein
     if not ratios:
         stmt4 = stmt.where(
             or_(
-                models.Name.scientific_name.like(f"{name[0]}%"),
-                models.Name.scientific_name.like(f"%{name[-4:]}"),
+                models.Name.scientific_name.like(f"{search_for_name[0]}%"),
+                models.Name.scientific_name.like(f"%{search_for_name[-4:]}"),
             )
         )
         results = session.execute(stmt4).all()
 
         for result in results:
-            ratio = Levenshtein.ratio(name, result.scientific_name)
+            ratio = Levenshtein.ratio(search_for_name, result.scientific_name)
             if ratio > 0.3:
                 ratios.append(
-                    {
-                        "calculate_with": "levenshtein",
-                        "scientific_name": result.scientific_name,
-                        "ipni_id": result.id,
-                        "similarity": round(ratio, 2),  # Convert to percentage
-                    }
+                    schemas.NameSearchResult(
+                        calculate_with="levenshtein",
+                        scientific_name=result.scientific_name,
+                        ipni_id=result.id,
+                        similarity=round(ratio, 2),  # Convert to percentage
+                    )
                 )
         if ratios:
-            return sorted(ratios, key=lambda x: x["similarity"], reverse=True)[:3]
+            return sorted(ratios, key=lambda x: x.similarity, reverse=True)[:3]
 
     if not results:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Name '{name}' not found.",
+            detail=f"Name '{search_for_name}' not found.",
         )
 
 
-@app.get("/names/", response_model=List[schemas.Name], tags=[Tag.NAME])
-def list_names(
-    offset: int = 0,
-    limit: Annotated[int, Query(le=10)] = 3,
-    session: Session = Depends(get_db),
-) -> List[models.Name]:
-    return session.query(models.Name).offset(offset).limit(limit).all()
-
-
 @app.get("/name_ranks/", tags=[Tag.NAME])
-def name_ranks(
-    session: Session = Depends(get_db),
+async def name_ranks(
+    session: Session = Depends(get_session),
 ) -> List[str]:
     """Get all distinct ranks in names."""
     ranks = session.query(models.Name.rank).group_by(models.Name.rank).all()
     return [r[0] for r in ranks if r[0] is not None]
 
 
-@app.get("/name_statuses/", tags=[Tag.NAME])
-def name_statuses(
-    session: Session = Depends(get_db),
+@app.get("/name_status/", tags=[Tag.NAME])
+async def name_statuses(
+    session: Session = Depends(get_session),
 ) -> List[str]:
-    """Get all distinct statuses in names."""
+    """Get all distinct status in names."""
     statuses = session.query(models.Name.status).group_by(models.Name.status).all()
     return [s[0] for s in statuses if s[0] is not None]
 
 
 @app.get("/names/search/", response_model=List[schemas.Name], tags=[Tag.NAME])
-def search_names(
-    offset: int = 0,
-    limit: Annotated[int, Query(le=10)] = 3,
+async def search_names(
     search: schemas.NameSearch = Depends(schemas.NameSearch),
-    session: Session = Depends(get_db),
-):
+    session: Session = Depends(get_session),
+) -> SASearchResults | dict[str, str]:
+
     return build_dynamic_query(
-        search_obj=search, model_cls=models.Name, db=session, limit=limit, offset=offset
+        search_obj=search, model_cls=models.Name, session=session
     )
 
 
@@ -328,8 +404,8 @@ def search_names(
 # Reference
 ###############################################################################
 @app.get("/reference/{ref_id}", response_model=schemas.Reference, tags=[Tag.REFERENCE])
-def get_reference(
-    ref_id: str, session: Session = Depends(get_db)
+async def get_reference(
+    ref_id: str, session: Session = Depends(get_session)
 ) -> models.Reference | None:
     obj = session.get(models.Reference, ref_id)
     if not obj:
@@ -340,78 +416,57 @@ def get_reference(
     return obj
 
 
-@app.get("/references/", response_model=List[schemas.Reference], tags=[Tag.REFERENCE])
-def list_references(
-    offset: int = 0,
-    limit: Annotated[int, Query(le=10)] = 3,
-    session: Session = Depends(get_db),
-) -> List[models.Reference]:
-    return session.query(models.Reference).offset(offset).limit(limit).all()
-
-
 @app.get(
-    "/references/search/", response_model=List[schemas.Reference], tags=[Tag.REFERENCE]
+    "/references/search/",
+    response_model=schemas.ReferenceSearchResult,
+    tags=[Tag.REFERENCE],
 )
-def search_references(
-    offset: int = 0,
-    limit: Annotated[int, Query(le=10)] = 3,
+async def search_references(
     search: schemas.ReferenceSearch = Depends(schemas.ReferenceSearch),
-    session: Session = Depends(get_db),
-):
+    session: Session = Depends(get_session),
+) -> SASearchResults | dict[str, str]:
     return build_dynamic_query(
         search_obj=search,
         model_cls=models.Reference,
-        db=session,
-        limit=limit,
-        offset=offset,
+        session=session,
     )
 
 
 # ###############################################################################
-# # Taxon
+# Family
 # ###############################################################################
-@app.get("/taxon/{id}", response_model=schemas.Taxon, tags=[Tag.TAXON])
-def get_taxon(id: str, session: Session = Depends(get_db)) -> models.Taxon | None:
-    obj = session.get(models.Taxon, id)
+@app.get("/family/{id}", response_model=schemas.Family, tags=[Tag.FAMILY])
+async def get_family(
+    id: str, session: Session = Depends(get_session)
+) -> models.Family | None:
+    obj = session.get(models.Family, id)
     if not obj:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Taxon with id={id} not found.",
+            detail=f"Family with id={id} not found.",
         )
     return obj
 
 
-@app.get("/taxons/", response_model=List[schemas.Taxon], tags=[Tag.TAXON])
-def list_taxons(
-    offset: int = 0,
-    limit: Annotated[int, Query(le=10)] = 3,
-    session: Session = Depends(get_db),
-) -> List[models.Taxon]:
-    return session.query(models.Taxon).offset(offset).limit(limit).all()
+@app.get("/families/", response_model=List[schemas.Family], tags=[Tag.FAMILY])
+async def family_families(
+    session: Session = Depends(get_session),
+) -> List[models.Family]:
+    """Get all distinct families."""
+    return session.query(models.Family).all()
 
 
-@app.get("/taxon_families/", tags=[Tag.TAXON])
-def taxon_families(
-    session: Session = Depends(get_db),
-) -> List[str]:
-    """Get all distinct families in taxa."""
-    families = session.query(models.Taxon.family).group_by(models.Taxon.family).all()
-    return [f[0] for f in families if f[0] is not None]
-
-
-@app.get("/taxons/search/", response_model=List[schemas.Taxon], tags=[Tag.TAXON])
-def search_taxons(
-    offset: int = 0,
-    limit: Annotated[int, Query(le=10)] = 3,
-    search: schemas.TaxonSearch = Depends(schemas.TaxonSearch),
-    session: Session = Depends(get_db),
-):
+@app.get(
+    "/families/search/", response_model=schemas.FamilySearchResult, tags=[Tag.FAMILY]
+)
+async def search_families(
+    search: schemas.FamilySearch = Depends(schemas.FamilySearch),
+    session: Session = Depends(get_session),
+) -> SASearchResults | dict[str, str]:
     return build_dynamic_query(
         search_obj=search,
-        model_cls=models.Taxon,
-        db=session,
-        limit=limit,
-        offset=offset,
+        model_cls=models.Family,
+        session=session,
     )
 
 
@@ -423,8 +478,8 @@ def search_taxons(
     response_model=schemas.NameRelation,
     tags=[Tag.NAME_RELATION],
 )
-def get_name_relation(
-    id: str, session: Session = Depends(get_db)
+async def get_name_relation(
+    id: str, session: Session = Depends(get_session)
 ) -> models.NameRelation | None:
     obj = session.get(models.NameRelation, id)
     if not obj:
@@ -435,22 +490,9 @@ def get_name_relation(
     return obj
 
 
-@app.get(
-    "/name_relations/",
-    response_model=List[schemas.NameRelation],
-    tags=[Tag.NAME_RELATION],
-)
-def list_name_relations(
-    offset: int = 0,
-    limit: Annotated[int, Query(le=10)] = 3,
-    session: Session = Depends(get_db),
-) -> List[models.NameRelation]:
-    return session.query(models.NameRelation).offset(offset).limit(limit).all()
-
-
 @app.get("/name_relation_types/", tags=[Tag.NAME_RELATION])
-def name_relation_types(
-    session: Session = Depends(get_db),
+async def name_relation_types(
+    session: Session = Depends(get_session),
 ) -> List[str]:
     """Get all distinct types in name relations."""
     types = (
@@ -461,34 +503,30 @@ def name_relation_types(
 
 @app.get(
     "/name_relations/search/",
-    response_model=List[schemas.NameRelation],
+    response_model=schemas.NameRelationSearchResult,
     tags=[Tag.NAME_RELATION],
 )
-def search_name_relations(
-    offset: int = 0,
-    limit: Annotated[int, Query(le=10)] = 3,
+async def search_name_relations(
     search: schemas.NameRelationSearch = Depends(schemas.NameRelationSearch),
-    session: Session = Depends(get_db),
-):
+    session: Session = Depends(get_session),
+) -> SASearchResults | dict[str, str]:
     return build_dynamic_query(
         search_obj=search,
         model_cls=models.NameRelation,
-        db=session,
-        limit=limit,
-        offset=offset,
+        session=session,
     )
 
 
-# ###############################################################################
-# # TypeMaterial
-# ###############################################################################
+###############################################################################
+# TypeMaterial
+###############################################################################
 @app.get(
     "/type_material/{id}",
     response_model=schemas.TypeMaterial,
     tags=[Tag.TYPE_MATERIAL],
 )
-def get_type_material(
-    id: int, session: Session = Depends(get_db)
+async def get_type_material(
+    id: int, session: Session = Depends(get_session)
 ) -> models.TypeMaterial | None:
     obj = session.get(models.TypeMaterial, id)
     if not obj:
@@ -500,33 +538,54 @@ def get_type_material(
 
 
 @app.get(
-    "/type_materials/",
-    response_model=List[schemas.TypeMaterial],
-    tags=[Tag.TYPE_MATERIAL],
-)
-def list_type_materials(
-    offset: int = 0,
-    limit: Annotated[int, Query(le=10)] = 3,
-    session: Session = Depends(get_db),
-) -> List[models.TypeMaterial]:
-    return session.query(models.TypeMaterial).offset(offset).limit(limit).all()
-
-
-@app.get(
     "/type_materials/search/",
-    response_model=List[schemas.TypeMaterial],
+    response_model=schemas.TypeMaterialSearchResult,
     tags=[Tag.TYPE_MATERIAL],
 )
-def search_type_materials(
-    offset: int = 0,
-    limit: Annotated[int, Query(le=10)] = 3,
+async def search_type_materials(
     search: schemas.TypeMaterialSearch = Depends(schemas.TypeMaterialSearch),
-    session: Session = Depends(get_db),
-):
+    session: Session = Depends(get_session),
+) -> SASearchResults | dict[str, str]:
     return build_dynamic_query(
         search_obj=search,
         model_cls=models.TypeMaterial,
-        db=session,
-        limit=limit,
-        offset=offset,
+        session=session,
+    )
+
+
+###############################################################################
+# Location
+###############################################################################
+
+
+@app.get(
+    "/location/{id}",
+    response_model=schemas.Location,
+    tags=[Tag.LOCATION],
+)
+async def get_location(
+    id: int, session: Session = Depends(get_session)
+) -> models.Location | None:
+    obj = session.get(models.Location, id)
+    if not obj:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Location with id={id} not found.",
+        )
+    return obj
+
+
+@app.get(
+    "/locations/search/",
+    response_model=schemas.LocationSearchResult,
+    tags=[Tag.LOCATION],
+)
+async def search_locations(
+    search: schemas.LocationSearch = Depends(schemas.LocationSearch),
+    session: Session = Depends(get_session),
+) -> SASearchResults | dict[str, str]:
+    return build_dynamic_query(
+        search_obj=search,
+        model_cls=models.Location,
+        session=session,
     )
