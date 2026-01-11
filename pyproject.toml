@@ -38,9 +38,10 @@ readme = "README.md"
 license = {text = "MIT"}
 
 [project.urls]
-Homepage = "https://github.com/biokb/biokb_ipni"
-Repository = "https://github.com/biokb/biokb_ipni"
+Homepage = "https://biokb-ipni.readthedocs.io"
 Documentation = "https://biokb-ipni.readthedocs.io"
+Repository = "https://github.com/biokb/biokb_ipni"
+Issues = "https://github.com/biokb/biokb_ipni/issues"
 
 [build-system]
 requires = ["hatchling"]
