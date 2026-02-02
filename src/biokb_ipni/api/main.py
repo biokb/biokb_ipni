@@ -4,7 +4,7 @@ import re
 import secrets
 from contextlib import asynccontextmanager
 from difflib import SequenceMatcher
-from typing import Annotated, AsyncGenerator, List
+from typing import AsyncGenerator, List
 
 import jellyfish
 import Levenshtein
@@ -13,8 +13,8 @@ from fastapi import Body, Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from sqlalchemy import Engine, create_engine, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy import Engine, create_engine, func, or_, select
+from sqlalchemy.orm import Session, aliased
 
 # from database import SessionLocal
 from sqlalchemy.sql import text
@@ -68,9 +68,30 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     pass
 
 
+description = """The [International Plant Names Index](https://www.ipni.org/) (IPNI) 
+is a global database that records the published scientific names of plants, along with 
+their authorship and original publication details. Its main purpose is nomenclatural: 
+to document what names have been validly published, not whether those names 
+are currently accepted. 
+Unlike taxonomic databases such as Plants of the World Online (POWO), IPNI does not 
+provide taxonomic opinions, synonymy decisions, or 
+distribution data—it serves as an authoritative name registry rather than a 
+classification system.
+
+This is no official website of IPNI. This API provides programmatic access to
+IPNI data extracted with [biokb-ipni](https://pypi.org/project/biokb-ipni/).
+
+References:
+- IPNI Website: https://www.ipni.org/
+- biokb-ipni package: https://pypi.org/project/biokb
+- IPNI (2026). International Plant Names Index. Published on the Internet 
+http://www.ipni.org, The Royal Botanic Gardens, Kew, Harvard University Herbaria & 
+Libraries and Australian National Herbarium. [Retrieved 19 January 2026].
+"""
+
 app = FastAPI(
     title="IPNI Data API",
-    description="RestfulAPI for IPNI-based data. <br><br>Reference: https://www.ipni.org/",
+    description=description,
     version="0.1.0",
     lifespan=lifespan,
 )
@@ -85,7 +106,7 @@ app.add_middleware(
 )
 
 
-def run_server(host: str = "0.0.0.0", port: int = 8000) -> None:
+def run_api(host: str = "0.0.0.0", port: int = 8000) -> None:
     uvicorn.run(
         app="biokb_ipni.api.main:app",
         host=host,
@@ -122,10 +143,10 @@ async def import_data(
             " ensuring the newest version."
         ),
     ),
-    keep_files: bool = Query(
-        True,
+    delete_files: bool = Query(
+        False,
         description=(
-            "Whether to keep the downloaded files"
+            "Whether to delete the downloaded files"
             " after importing them into the database."
         ),
     ),
@@ -136,7 +157,9 @@ async def import_data(
     """
     try:
         dbm = manager.DbManager()
-        result = dbm.import_data(force_download=force_download, keep_files=keep_files)
+        result = dbm.import_data(
+            force_download=force_download, delete_files=delete_files
+        )
     except Exception as e:
         logger.error(f"Error importing data: {e}")
         raise HTTPException(
@@ -166,7 +189,7 @@ async def get_report(
                 detail="Error generating TTL files. Data already imported?",
             ) from e
     return FileResponse(
-        path=file_path, filename="coconut_ttls.zip", media_type="application/zip"
+        path=file_path, filename="ttls.zip", media_type="application/zip"
     )
 
 
@@ -213,10 +236,19 @@ async def import_neo4j(
 ###############################################################################
 # Name
 ###############################################################################
-@app.get("/name/{name_id}", response_model=schemas.Name, tags=[Tag.NAME])
-async def get_name(
-    name_id: str, session: Session = Depends(get_session)
+@app.get("/name/by_id/", response_model=schemas.Name, tags=[Tag.NAME])
+async def get_name_by_id(
+    name_id: str = Query(
+        ...,
+        description="Name ID to search for",
+        openapi_examples={
+            "Achillea millefolium L.,": {"value": "2294-2"},
+            "Aloe perfoliata var. vera L.": {"value": "60476901-2"},
+        },
+    ),
+    session: Session = Depends(get_session),
 ) -> models.Name | None:
+    """Get a IPNI entry by the name ID."""
     obj = session.get(models.Name, name_id)
     if not obj:
         raise HTTPException(
@@ -228,13 +260,18 @@ async def get_name(
 
 @app.get(
     "/names/find_similar",
-    response_model=list[schemas.NameSearchResult],
+    response_model=list[schemas.NameSearchSimilarNameResult],
     tags=[Tag.NAME],
 )
 async def names_find_similar(
     session: Session = Depends(get_session),
     search_for_name: str = Query(
-        ..., description="Name to search for", example="acHila meliflium"
+        ...,
+        description="Name to search for",
+        openapi_examples={
+            "example 1": {"value": "acHila meliflium"},
+            "example 2": {"value": "Almue Fera"},
+        },
     ),
 ):
     """Fuzzy search for similar names using LEVENSHTEIN algorithm."""
@@ -252,7 +289,7 @@ async def names_find_similar(
         return_values = []
         for exact_result in exact_results:
             return_values.append(
-                schemas.NameSearchResult(
+                schemas.NameSearchSimilarNameResult(
                     calculate_with="exact",
                     scientific_name=exact_result.scientific_name,
                     similarity=1.0,
@@ -298,7 +335,7 @@ async def names_find_similar(
 
             if final_similarity > 0.5:
                 phonetic_matches.append(
-                    schemas.NameSearchResult(
+                    schemas.NameSearchSimilarNameResult(
                         calculate_with="metaphone_jaro",
                         scientific_name=candidate.scientific_name,
                         ipni_id=candidate.id,
@@ -330,7 +367,7 @@ async def names_find_similar(
         ratio = SequenceMatcher(None, search_for_name, result.scientific_name).ratio()
         if ratio > 0.3:  # Threshold for similarity
             ratios.append(
-                schemas.NameSearchResult(
+                schemas.NameSearchSimilarNameResult(
                     calculate_with="pattern_match",
                     scientific_name=result.scientific_name,
                     ipni_id=result.id,
@@ -354,7 +391,7 @@ async def names_find_similar(
             ratio = Levenshtein.ratio(search_for_name, result.scientific_name)
             if ratio > 0.3:
                 ratios.append(
-                    schemas.NameSearchResult(
+                    schemas.NameSearchSimilarNameResult(
                         calculate_with="levenshtein",
                         scientific_name=result.scientific_name,
                         ipni_id=result.id,
@@ -371,47 +408,78 @@ async def names_find_similar(
         )
 
 
-@app.get("/name_ranks/", tags=[Tag.NAME])
+@app.get("/name/ranks/", tags=[Tag.NAME])
 async def name_ranks(
     session: Session = Depends(get_session),
-) -> List[str]:
+):
     """Get all distinct ranks in names."""
-    ranks = session.query(models.Name.rank).group_by(models.Name.rank).all()
-    return [r[0] for r in ranks if r[0] is not None]
+    ranks = (
+        session.query(models.Name.rank, func.count(models.Name.rank))
+        .group_by(models.Name.rank)
+        .order_by(func.count(models.Name.rank).desc())
+        .all()
+    )
+    return [{"rank": r[0], "count": r[1]} for r in ranks if r[0] is not None]
 
 
-@app.get("/name_status/", tags=[Tag.NAME])
+@app.get("/name/statuses/", tags=[Tag.NAME])
 async def name_statuses(
     session: Session = Depends(get_session),
-) -> List[str]:
+):
     """Get all distinct status in names."""
-    statuses = session.query(models.Name.status).group_by(models.Name.status).all()
-    return [s[0] for s in statuses if s[0] is not None]
+    statuses = (
+        session.query(models.Name.status, func.count(models.Name.status).label("count"))
+        .group_by(models.Name.status)
+        .order_by(func.count(models.Name.status).desc())
+        .all()
+    )
+    result = [
+        {"status": s.status, "count": s.count} for s in statuses if s.status is not None
+    ]
+    print(result)
+    return result
 
 
-@app.get("/names/search/", response_model=List[schemas.Name], tags=[Tag.NAME])
+@app.get(
+    "/names/search/", response_model=schemas.NameSearchResult | dict, tags=[Tag.NAME]
+)
 async def search_names(
     search: schemas.NameSearch = Depends(schemas.NameSearch),
     session: Session = Depends(get_session),
-) -> SASearchResults | dict[str, str]:
+):
+    """Searches for names based on various fields.
 
+    **Tips**:
+    - Use `%` as wildcard for partial matches in string fields.
+    - Get family_id from `/families/search/` endpoint.
+    """
     return build_dynamic_query(
-        search_obj=search, model_cls=models.Name, session=session
+        search_obj=search,
+        model_cls=models.Name,
+        session=session,
     )
 
 
 ###############################################################################
 # Reference
 ###############################################################################
-@app.get("/reference/{ref_id}", response_model=schemas.Reference, tags=[Tag.REFERENCE])
+@app.get("/reference/by_id/", response_model=schemas.Reference, tags=[Tag.REFERENCE])
 async def get_reference(
-    ref_id: str, session: Session = Depends(get_session)
+    ref_id: str = Query(
+        ...,
+        description="Reference ID to search for",
+        openapi_examples={
+            "example 1": {"value": "1071-2$v2"},
+            "example 2": {"value": "918-2$v4"},
+        },
+    ),
+    session: Session = Depends(get_session),
 ) -> models.Reference | None:
     obj = session.get(models.Reference, ref_id)
     if not obj:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Reference with id={id} not found.",
+            detail=f"Reference with id={ref_id} not found.",
         )
     return obj
 
@@ -435,25 +503,47 @@ async def search_references(
 # ###############################################################################
 # Family
 # ###############################################################################
-@app.get("/family/{id}", response_model=schemas.Family, tags=[Tag.FAMILY])
+@app.get("/family/by_id/", response_model=schemas.Family, tags=[Tag.FAMILY])
 async def get_family(
-    id: str, session: Session = Depends(get_session)
-) -> models.Family | None:
-    obj = session.get(models.Family, id)
-    if not obj:
+    id: str = Query(
+        ...,
+        description="Family ID to search for",
+        openapi_examples={
+            "Stemonaceae": {"value": 329},
+            "Nymphaeaceae": {"value": 57},
+        },
+    ),
+    session: Session = Depends(get_session),
+):
+    """Get a family by internal database ID (used in names).
+
+    Additionally returns the associated name IDs.
+    """
+    family: manager.Family | None = session.get(models.Family, id)
+    if not family:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Family with id={id} not found.",
         )
-    return obj
+    else:
+        # get name_ids
+        stmt = select(models.Name.id).filter(models.Name.family_id == family.id)
+        result = session.execute(stmt).all()
+        name_ids = [id for (id,) in result]
+    family_dict = schemas.Family.model_validate(family).model_dump()
+    return {**family_dict, "name_ids": name_ids}
 
 
-@app.get("/families/", response_model=List[schemas.Family], tags=[Tag.FAMILY])
+@app.get("/families/", response_model=List[schemas.FamilyWithId], tags=[Tag.FAMILY])
 async def family_families(
     session: Session = Depends(get_session),
 ) -> List[models.Family]:
-    """Get all distinct families."""
-    return session.query(models.Family).all()
+    """Get all distinct families.
+
+    - **tax_id**: NCBI Taxonomy ID for the family https://purl.obolibrary.org/obo/NCBITaxon_{tax_id}.
+    - **id**: internal database ID for the family which can be used to link with names.
+    """
+    return session.query(models.Family).order_by(models.Family.family).all()
 
 
 @app.get(
@@ -473,21 +563,6 @@ async def search_families(
 # ###############################################################################
 # # NameRelation
 # ###############################################################################
-@app.get(
-    "/name_relation/{id}",
-    response_model=schemas.NameRelation,
-    tags=[Tag.NAME_RELATION],
-)
-async def get_name_relation(
-    id: str, session: Session = Depends(get_session)
-) -> models.NameRelation | None:
-    obj = session.get(models.NameRelation, id)
-    if not obj:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Name Relation with id={id} not found.",
-        )
-    return obj
 
 
 @app.get("/name_relation_types/", tags=[Tag.NAME_RELATION])
@@ -509,12 +584,41 @@ async def name_relation_types(
 async def search_name_relations(
     search: schemas.NameRelationSearch = Depends(schemas.NameRelationSearch),
     session: Session = Depends(get_session),
-) -> SASearchResults | dict[str, str]:
-    return build_dynamic_query(
-        search_obj=search,
-        model_cls=models.NameRelation,
-        session=session,
+):
+    Name = aliased(models.Name)
+    RelatedName = aliased(models.Name)
+    stmt = (
+        select(
+            models.NameRelation.type,
+            models.NameRelation.name_id,
+            models.NameRelation.related_name_id,
+            Name.scientific_name.label("name"),
+            RelatedName.scientific_name.label("related_name"),
+        )
+        .select_from(models.NameRelation)
+        .join(Name, models.NameRelation.name)
+        .join(RelatedName, models.NameRelation.related_name)
     )
+    filters = []
+    if search.type:
+        filters.append(models.NameRelation.type == search.type)
+    if search.related_name:
+        filters.append(RelatedName.scientific_name.like(search.related_name))
+    if search.related_name_id:
+        filters.append(models.NameRelation.related_name_id == search.related_name_id)
+    if search.name:
+        filters.append(Name.scientific_name.like(search.name))
+    if filters:
+        stmt = stmt.where(*filters)
+    # count the total before offset/limit
+    total = session.execute(stmt.with_only_columns(func.count())).scalar_one()
+    results = session.execute(stmt.offset(search.offset).limit(search.limit)).all()
+    return {
+        "count": total,
+        "results": results,
+        "offset": search.offset,
+        "limit": search.limit,
+    }
 
 
 ###############################################################################

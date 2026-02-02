@@ -1,4 +1,4 @@
-# API Reference
+# Data Models
 
 ## biokb_ipni.db.models
 

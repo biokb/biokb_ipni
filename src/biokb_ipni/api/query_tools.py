@@ -43,7 +43,7 @@ def _build_dynamic_query(
     search_obj: BaseModel,
     model_cls: Type[models.Base],
     session: Session,
-) -> SASearchResults:
+):
     """
     Build and execute a SQLAlchemy 2.0-style SELECT based on the non-None
     attributes of a Pydantic model instance.  The operator is inferred from

@@ -37,6 +37,9 @@ class Location(Base):
     longitude: Mapped[Optional[float]] = mapped_column(
         comment="Longitude coordinate of the location"
     )
+    type_materials: Mapped[list["TypeMaterial"]] = relationship(
+        back_populates="location"
+    )
 
 
 class Name(Base):
@@ -52,9 +55,13 @@ class Name(Base):
         published_in_page (Optional[int]): Page number where the name was published.
         remarks (Optional[str]): Additional remarks about the name.
         reference_id (Optional[str]): Foreign key to the associated reference.
-        taxon (Taxon): Relationship to the associated taxon.
+        family_id (Optional[int]): Foreign key to the family.
+        tax_id (Optional[int]): NCBI Taxon ID associated with the name.
+        family (Family): Relationship to the associated family.
         reference (Reference): Relationship to the associated reference.
         type_materials (list[TypeMaterial]): Relationship to associated type materials.
+        primary_relations (list[NameRelation]): Relationships where this name is the primary name.
+        related_relations (list[NameRelation]): Relationships where this name is the related name.
     """
 
     __tablename__ = Base._prefix + "name"
@@ -63,7 +70,9 @@ class Name(Base):
         String(255), primary_key=True, comment="Primary key identifier for the name"
     )
 
-    rank: Mapped[str] = mapped_column(String(255), comment="Taxonomic rank of the name")
+    rank: Mapped[str] = mapped_column(
+        String(255), comment="Taxonomic rank of the name", index=True
+    )
     scientific_name: Mapped[str] = mapped_column(
         String(255), index=True, comment="The scientific name"
     )
@@ -71,7 +80,7 @@ class Name(Base):
         String(255), comment="Authorship information for the name"
     )
     status: Mapped[str] = mapped_column(
-        String(255), comment="Status of the name (e.g., accepted, synonym)"
+        String(255), comment="Status of the name (e.g., accepted, synonym)", index=True
     )
     published_in_year: Mapped[Optional[int]] = mapped_column(
         comment="Year the name was published"
@@ -104,6 +113,16 @@ class Name(Base):
     reference: Mapped["Reference"] = relationship(back_populates="names")
     type_materials: Mapped[list["TypeMaterial"]] = relationship(back_populates="name")
 
+    primary_relations: Mapped[list["NameRelation"]] = relationship(
+        back_populates="name",
+        foreign_keys="NameRelation.name_id",
+    )
+
+    related_relations: Mapped[list["NameRelation"]] = relationship(
+        back_populates="related_name",
+        foreign_keys="NameRelation.related_name_id",
+    )
+
     @property
     def family_name(self) -> str:
         """Get the family name associated with this name."""
@@ -131,7 +150,8 @@ class Reference(Base):
         isbn (Optional[str]): ISBN of the reference.
         link (Optional[str]): URL link to the reference.
         remarks (Optional[str]): Additional remarks about the reference.
-        names (list[Name]): Relationship to associated names."""
+        names (list[Name]): Relationship to associated names.
+    """
 
     __tablename__ = Base._prefix + "reference"
 
@@ -182,6 +202,14 @@ class Reference(Base):
     )
 
     @property
+    def names_short(self) -> list[dict[str, str]]:
+        """Get a list of dicts with name and ID."""
+        return [
+            {"id": name.id, "scientific_name": name.scientific_name}
+            for name in self.names
+        ]
+
+    @property
     def name_ids(self) -> list[str]:
         """Get a list of associated name IDs."""
         return [name.id for name in self.names]
@@ -199,6 +227,8 @@ class Family(Base):
     Attributes:
         id (str): Primary key identifier for the family.
         family_name (str): Name of the family.
+        tax_id (Optional[int]): NCBI Taxon ID associated with the family.
+        names (list[Name]): Relationship to associated names.
     """
 
     __tablename__ = Base._prefix + "family"
@@ -213,6 +243,14 @@ class Family(Base):
 
     # relationships
     names: Mapped[list[Name]] = relationship(back_populates="family")
+
+    @property
+    def names_short(self) -> list[dict[str, str]]:
+        """Get a list of dicts with name and ID."""
+        return [
+            {"id": name.id, "scientific_name": name.scientific_name}
+            for name in self.names
+        ]
 
     @property
     def name_ids(self) -> list[str]:
@@ -240,7 +278,7 @@ class NameRelation(Base):
     id: Mapped[int] = mapped_column(autoincrement=True, primary_key=True)
 
     type: Mapped[str] = mapped_column(
-        String(255), comment="Type of relationship between the names"
+        String(255), comment="Type of relationship between the names", index=True
     )
 
     # foreign keys
@@ -253,8 +291,15 @@ class NameRelation(Base):
         ForeignKey(Base._prefix + "name.id", comment="Foreign key to the primary name"),
     )
     # relationships
-    related_name: Mapped[Name] = relationship(foreign_keys=[related_name_id])
-    name: Mapped[Name] = relationship(foreign_keys=[name_id])
+    name: Mapped[Name] = relationship(
+        back_populates="primary_relations",
+        foreign_keys=[name_id],
+    )
+
+    related_name: Mapped[Name] = relationship(
+        back_populates="related_relations",
+        foreign_keys=[related_name_id],
+    )
 
     def __repr__(self) -> str:
         return f"<NameRelation:id={self.id!r}, type={self.type!r}, name_id={self.name_id!r}, related_name_id={self.related_name_id!r}>"
@@ -271,12 +316,12 @@ class TypeMaterial(Base):
         catalog_number (Optional[str]): Catalog number of the type material.
         collector (Optional[str]): Collector of the type material.
         date (Optional[date_type]): Date of collection of the type material.
-        locality (Optional[str]): Locality information of the type material.
-        latitude (Optional[float]): Latitude coordinate of the collection site.
-        longitude (Optional[float]): Longitude coordinate of the collection site.
         remarks (Optional[str]): Additional remarks about the type material.
         name_id (str): Foreign key to the associated name.
+        location_id (Optional[int]): Foreign key to the location.
         name (Name): Relationship to the associated name.
+        location (Optional[Location]): Relationship to the location.
+
     """
 
     __tablename__ = Base._prefix + "type_material"
@@ -314,6 +359,7 @@ class TypeMaterial(Base):
 
     # relationships
     name: Mapped[Name] = relationship(back_populates="type_materials")
+    location: Mapped[Optional[Location]] = relationship(back_populates="type_materials")
 
     def __repr__(self) -> str:
         return f"<TypeMaterial:id={self.id!r}, status={self.status!r}, institution_code={self.institution_code!r}>"

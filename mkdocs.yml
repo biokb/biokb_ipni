@@ -45,8 +45,7 @@ nav:
   - notebooks/query_examples.ipynb
   - How to run Neo4J: how_to_run_neo4j.md
   - API Reference: api.md
-  - notebooks/test_workflow.ipynb
-  - notebooks/test_workflow_podman.ipynb
+  - notebooks/tutorial.ipynb
   - notebooks/erdiagram.ipynb
 extra:
   generator: false

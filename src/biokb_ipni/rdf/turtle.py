@@ -2,11 +2,10 @@ import logging
 import os.path
 import re
 import shutil
-from ast import stmt
 from typing import List, Optional, TypeVar
 
 from rdflib import RDF, XSD, Graph, Literal, Namespace, URIRef
-from sqlalchemy import Engine, and_, create_engine, or_, select
+from sqlalchemy import Engine, and_, create_engine, or_, select, text
 from sqlalchemy.orm import sessionmaker
 from tqdm import tqdm
 
@@ -16,6 +15,7 @@ from biokb_ipni.db import models
 from biokb_ipni.rdf import namespaces
 
 logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 
 # Type variable for SQLAlchemy model classes
@@ -256,60 +256,75 @@ class TurtleCreator:
     def _create_names(self) -> None:
         logging.info("Creating RDF names turtle file.")
 
-        graph = get_empty_graph()
-
-        with self.Session() as session:
+        with self.__engine.connect() as conn:
             # Query all names
-            names: List[models.Name] = session.query(models.Name).all()
+            result = conn.execution_options(stream_results=True).execute(
+                text(f"SELECT * FROM {models.Name.__tablename__}")
+            )
+            file_counter = 0
+            while True:
+                names = result.fetchmany(100_000)
+                if not names:
+                    break
 
-            for name in tqdm(names, desc="Creating names triples"):
-                name_entity: URIRef = namespaces.NAME_NS[str(name.id)]
-                # Add type declarations
-                graph.add(
-                    triple=(
-                        name_entity,
-                        RDF.type,
-                        namespaces.NODE_NS[models.Name.__name__],
-                    )
-                )
-                graph.add(
-                    triple=(name_entity, RDF.type, namespaces.NODE_NS[BASIC_NODE_LABEL])
-                )
-                graph.add(
-                    triple=(
-                        name_entity,
-                        namespaces.REL_NS["name"],
-                        Literal(name.scientific_name, datatype=XSD.string),
-                    )
-                )
-                if name.tax_id:
+                file_counter += 1
+                graph = get_empty_graph()
+                for name in names:
+
+                    name_entity: URIRef = namespaces.NAME_NS[str(name.id)]
+                    # Add type declarations
                     graph.add(
                         triple=(
                             name_entity,
-                            namespaces.REL_NS["SAME_AS"],
-                            namespaces.NCBI_TAXON_NS[str(name.tax_id)],
+                            RDF.type,
+                            namespaces.NODE_NS[models.Name.__name__],
                         )
                     )
-                graph.add(
-                    triple=(
-                        name_entity,
-                        namespaces.REL_NS["rank"],
-                        Literal(name.rank, datatype=XSD.string),
-                    )
-                )
-                # add relation to family
-                if name.family_id:
                     graph.add(
                         triple=(
                             name_entity,
-                            namespaces.REL_NS["HAS_FAMILY"],
-                            namespaces.FAMILY_NS[str(name.family_id)],
+                            RDF.type,
+                            namespaces.NODE_NS[BASIC_NODE_LABEL],
                         )
                     )
+                    graph.add(
+                        triple=(
+                            name_entity,
+                            namespaces.REL_NS["name"],
+                            Literal(name.scientific_name, datatype=XSD.string),
+                        )
+                    )
+                    if name.tax_id:
+                        graph.add(
+                            triple=(
+                                name_entity,
+                                namespaces.REL_NS["SAME_AS"],
+                                namespaces.NCBI_TAXON_NS[str(name.tax_id)],
+                            )
+                        )
+                    graph.add(
+                        triple=(
+                            name_entity,
+                            namespaces.REL_NS["rank"],
+                            Literal(name.rank, datatype=XSD.string),
+                        )
+                    )
+                    # add relation to family
+                    if name.family_id:
+                        graph.add(
+                            triple=(
+                                name_entity,
+                                namespaces.REL_NS["HAS_FAMILY"],
+                                namespaces.FAMILY_NS[str(name.family_id)],
+                            )
+                        )
 
-        ttl_path = os.path.join(self.__ttls_folder, f"{models.Name.__tablename__}.ttl")
-        graph.serialize(ttl_path, format="turtle")
-        del graph
+                ttl_path = os.path.join(
+                    self.__ttls_folder,
+                    f"{models.Name.__tablename__}_{file_counter}.ttl",
+                )
+                graph.serialize(ttl_path, format="turtle")
+                del graph
 
     def _create_zip_from_all_ttls(self) -> str:
         """Package all generated turtle files into a single zip archive.
@@ -339,12 +354,13 @@ def create_ttls(
 ) -> str:
     """Create all turtle files.
 
-    If engine=None tries to get the settings from config ini file
+    If engine=None tries to get the settings from environment else uses the default engine.
 
-    If export_to_folder=None takes the default path.
+    If export_to_folder is provided, turtle files are exported to this folder. Otherwise,
+    the default export folder (~/.biokb/ipni/data) is used.
 
     Args:
-        engine (Engine | None, optional): SQLAlchemy class. Defaults to None.
+        engine (Engine | None, optional): SQLAlchemy engine. Defaults to None.
         export_to_folder (str | None, optional): Folder to export ttl files.
             Defaults to None.
 

@@ -1,6 +1,6 @@
 from rdflib.namespace import Namespace
 
-BASE_URI = "https://ipni.org/"
+BASE_URI = "https://www.ipni.org/"
 
 
 BIOKB_BASE = Namespace("https://biokb.scai.fraunhofer.de/ipni/")

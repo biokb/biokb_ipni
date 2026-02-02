@@ -20,6 +20,7 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger: logging.Logger = logging.getLogger(name=__name__)
+logger.addHandler(logging.NullHandler())
 
 
 class Neo4jImporter:

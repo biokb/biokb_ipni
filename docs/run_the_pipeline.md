@@ -22,10 +22,10 @@ For more options see the [CLI options](cli.md) section below.
 
 ### As RESTful API server
 
-***Usage:*** `biokb_ipni run-api [OPTIONS]`
+***Usage:*** `biokb_ipni run-server [OPTIONS]`
 
 ```bash
-biokb_ipni run-api
+biokb_ipni run-server
 ```
 
 - ***user***: admin  

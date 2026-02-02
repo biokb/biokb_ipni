@@ -176,3 +176,5 @@ tests/dbs/test.db
 notebooks/test.db
 .vscode
 tests/db/test.db
+.env_local
+docs/notebooks/test.ipynb

@@ -1,13 +1,12 @@
 import logging
 import os
-import shutil
 import sqlite3
 import urllib.request
 import zipfile
 from typing import Any, Optional
 
 import pandas as pd
-from sqlalchemy import Engine, create_engine, event
+from sqlalchemy import Engine, create_engine, event, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.session import Session
 
@@ -26,15 +25,14 @@ from biokb_ipni.constants import (
 from biokb_ipni.db.models import (
     Base,
     Family,
+    Location,
     Name,
     NameRelation,
     Reference,
     TypeMaterial,
-    Location,
 )
 from biokb_ipni.tools import get_cleaned_and_standardized_dataframe, parse_date
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -76,11 +74,13 @@ class DbManager:
             path_to_zip_file (str | None): Path to the zip file containing data. If None, uses default path.
             force_download (bool): Whether to force download the data.
         """
-        if isinstance(engine, Engine):
-            self.engine = engine
-        else:
-            self.engine = create_engine(DB_DEFAULT_CONNECTION_STR)
-        self.Session = sessionmaker(bind=self.engine)
+        connection_str: str = os.getenv("CONNECTION_STR", DB_DEFAULT_CONNECTION_STR)
+        self.__engine: Engine = engine if engine else create_engine(str(connection_str))
+        if self.__engine.dialect.name == "sqlite":
+            with self.__engine.connect() as connection:
+                connection.execute(text("pragma foreign_keys=ON"))
+        logger.info("Engine: %s", self.__engine)
+        self.Session = sessionmaker(bind=self.__engine)
         self.path_to_zip_file = path_to_zip_file or PATH_TO_ZIP_FILE
         self.force_download = force_download
 
@@ -103,19 +103,19 @@ class DbManager:
 
     def recreate_db(self) -> None:
         """Recreate the database by dropping and creating all tables."""
-        Base.metadata.drop_all(self.engine)
-        Base.metadata.create_all(self.engine)
+        Base.metadata.drop_all(self.__engine)
+        Base.metadata.create_all(self.__engine)
         logger.info("Database recreated.")
 
     def import_data(
-        self, force_download: bool = False, keep_files: bool = False
+        self, force_download: bool = False, delete_files: bool = False
     ) -> dict[str, int]:
         """Import all data in database.
         Args:
             force_download (bool, optional): If True, will force download the data, even if
                 files already exist. If False, it will skip the downloading part if files
                 already exist locally. Defaults to False.
-            keep_files (bool, optional): If True, downloaded files are kept after import.
+            delete_files (bool, optional): If True, downloaded files are deleted after import.
                 Defaults to False.
         Returns:
             Dict[str, int]: table=key and number of inserted=value
@@ -159,7 +159,7 @@ class DbManager:
         logger.info("Importing references")
         df_reference = self.get_dataframe(TsvFileName.REFERENCE, Reference)
         df_reference.to_sql(
-            Reference.__tablename__, self.engine, if_exists="append", index=False
+            Reference.__tablename__, self.__engine, if_exists="append", index=False
         )
         imported[Reference.__tablename__] = len(df_reference)
         df_reference = None  # free memory
@@ -196,7 +196,7 @@ class DbManager:
             .rename(index=lambda i: i + 1)
         )
         df_family.to_sql(
-            Family.__tablename__, self.engine, if_exists="append", index=True
+            Family.__tablename__, self.__engine, if_exists="append", index=True
         )
         imported[Family.__tablename__] = len(df_family)
         # -----------------------------------------------------------------------------
@@ -228,7 +228,9 @@ class DbManager:
         ).drop(columns=["tax_name"])
         df_name["family_id"] = df_name["family_id"].astype("Int64")  # allow nulls
         df_name["tax_id"] = df_name["tax_id"].astype("Int64")  # allow nulls
-        df_name.to_sql(Name.__tablename__, self.engine, if_exists="append", index=False)
+        df_name.to_sql(
+            Name.__tablename__, self.__engine, if_exists="append", index=False
+        )
         imported[Name.__tablename__] = len(df_name)
         df_name = None  # free memory
 
@@ -245,7 +247,7 @@ class DbManager:
             .rename(index=lambda i: i + 1)
         )
         df_location.to_sql(
-            Location.__tablename__, self.engine, if_exists="append", index=True
+            Location.__tablename__, self.__engine, if_exists="append", index=True
         )
         df_location["location_id"] = df_location.index  # add location_id for merging
         df_type_material = df_type_material.merge(
@@ -257,7 +259,7 @@ class DbManager:
         )  # drop columns after merging
         df_location = None  # free memory
         df_type_material.to_sql(
-            TypeMaterial.__tablename__, self.engine, if_exists="append", index=False
+            TypeMaterial.__tablename__, self.__engine, if_exists="append", index=False
         )
         imported[TypeMaterial.__tablename__] = len(df_type_material)
         df_type_material = None  # free memory
@@ -267,13 +269,13 @@ class DbManager:
         logger.info("Importing name relations")
         df_name_relation = self.get_dataframe(TsvFileName.NAMES_RELATION, NameRelation)
         df_name_relation.to_sql(
-            NameRelation.__tablename__, self.engine, if_exists="append", index=False
+            NameRelation.__tablename__, self.__engine, if_exists="append", index=False
         )
         imported[NameRelation.__tablename__] = len(df_name_relation)
         df_name_relation = None  # free memory
 
-        if not keep_files:
-            shutil.rmtree(self.path_to_zip_file)
+        if delete_files and os.path.exists(self.path_to_zip_file):
+            os.remove(self.path_to_zip_file)
 
         return imported
 
@@ -315,7 +317,7 @@ class DbManager:
 def import_data(
     engine: Optional[Engine] = None,
     force_download: bool = False,
-    keep_files: bool = False,
+    delete_files: bool = False,
 ) -> dict[str, int]:
     """Import all data in database.
 
@@ -324,14 +326,16 @@ def import_data(
         force_download (bool, optional): If True, will force download the data, even if
             files already exist. If False, it will skip the downloading part if files
             already exist locally. Defaults to False.
-        keep_files (bool, optional): If True, downloaded files are kept after import.
+        delete_files (bool, optional): If True, downloaded files are deleted after import.
             Defaults to False.
 
     Returns:
         Dict[str, int]: table=key and number of inserted=value
     """
     db_manager = DbManager(engine)
-    return db_manager.import_data(force_download=force_download, keep_files=keep_files)
+    return db_manager.import_data(
+        force_download=force_download, delete_files=delete_files
+    )
 
 
 def get_session(engine: Optional[Engine] = None) -> Session:

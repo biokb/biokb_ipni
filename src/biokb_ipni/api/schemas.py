@@ -1,9 +1,8 @@
 # schemas.py
 from datetime import date as date_type
+from enum import Enum
 from typing import Annotated, Literal, Optional
-from unittest.mock import Base
 
-from neo4j import Query
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -60,7 +59,14 @@ class NameBase(BaseModel):
     published_in_year: Optional[int]
     published_in_page: Optional[int]
     remarks: Optional[str]
-    reference_id: Optional[str] = None
+    family_id: Optional[int] = None
+
+
+class NameWithId(NameBase):
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
 
 
 class Name(NameBase):
@@ -69,6 +75,9 @@ class Name(NameBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
+    family_name: Optional[str] = None
+    reference: Optional["ReferenceWithId"] = None
+    type_materials: list["TypeMaterial"] = []
 
 
 class NameSearch(OffsetLimit):
@@ -83,9 +92,17 @@ class NameSearch(OffsetLimit):
     published_in_page: Optional[int] = None
     remarks: Optional[str] = None
     reference_id: Optional[str] = None
+    family_id: Optional[int] = None
 
 
 class NameSearchResult(BaseModel):
+    count: int
+    limit: int
+    offset: int
+    results: list[Name]
+
+
+class NameSearchSimilarNameResult(BaseModel):
     calculate_with: Literal["exact", "levenshtein", "metaphone_jaro", "pattern_match"]
     scientific_name: str
     ipni_id: str
@@ -128,15 +145,21 @@ class ReferenceBase(BaseModel):
     remarks: Optional[str] = None
 
 
-class ReferenceCreate(ReferenceBase):
+class ReferenceWithId(ReferenceBase):
     id: str
-    title: str
+
+
+class NameShort(BaseModel):
+    id: str
+    scientific_name: str
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class Reference(ReferenceBase):
     id: str
     title: str
-    name_ids: list[str]
+    names_short: list[NameShort]
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -156,26 +179,29 @@ class ReferenceSearchResult(CountOffsetLimit):
 # Family Schemas
 # -------------------------------------------------------------------
 class FamilyBase(BaseModel):
-    family: str
+    family: Optional[str] = None
     tax_id: Optional[int] = None
 
 
 class Family(FamilyBase):
     id: str
+    name_ids: list[str]
 
-    # model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True)
 
 
-class FamilySearch(OffsetLimit):
+class FamilyWithId(FamilyBase):
+    id: Optional[str] = None
+
+
+class FamilySearch(OffsetLimit, FamilyWithId):
     """Fields for searching family records."""
 
-    id: Optional[str] = None
-    family: Optional[str] = None
-    tax_id: Optional[int] = None
+    pass
 
 
 class FamilySearchResult(CountOffsetLimit):
-    results: list[Family]
+    results: list[FamilyWithId]
 
 
 # -------------------------------------------------------------------
@@ -188,27 +214,48 @@ class NameRelationBase(BaseModel):
     name_id: Optional[str] = None
 
 
-class NameRelationCreate(NameRelationBase):
-    pass
-
-
 class NameRelation(NameRelationBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
 
 
+class NameRelationType(str, Enum):
+    basionym = "BASIONYM"
+    conserved = "CONSERVED"
+    homotypic = "HOMOTYPIC"
+    later_homonym = "LATER_HOMONYM"
+    replacement_name = "REPLACEMENT_NAME"
+    spelling_correction = "SPELLING_CORRECTION"
+    superfluous = "SUPERFLUOUS"
+    isonymof = "isonymOf"
+    orthographicvariantof = "orthographicVariantOf"
+    validationof = "validationOf"
+
+
 class NameRelationSearch(OffsetLimit):
     """Fields for searching name relations."""
 
-    id: Optional[int] = None
-    type: Optional[str] = None
-    related_name_id: Optional[str] = None
+    name: Optional[str] = None
     name_id: Optional[str] = None
+    type: Optional[NameRelationType] = None
+    related_name: Optional[str] = None
+    related_name_id: Optional[str] = None
 
 
-class NameRelationSearchResult(OffsetLimit):
-    results: list[NameRelation]
+class NameRelationSimple(BaseModel):
+    name: str
+    type: str
+    related_name: str
+    related_name_id: str
+    name_id: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class NameRelationSearchResult(CountOffsetLimit):
+    results: list[NameRelationSimple]
+    model_config = ConfigDict(from_attributes=True)
 
 
 # -------------------------------------------------------------------

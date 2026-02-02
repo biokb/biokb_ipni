@@ -84,10 +84,10 @@ For more options see the [CLI options](#cli-options) section below.
 
 ### As RESTful API server
 
-***Usage:*** `biokb_ipni run-api [OPTIONS]`
+***Usage:*** `biokb_ipni run-server [OPTIONS]`
 
 ```bash
-biokb_ipni run-api
+biokb_ipni run-server
 ```
 
 - ***user***: admin  
@@ -192,7 +192,7 @@ biokb_ipni import-data
 | Option | long | Description | default |
 |--------|------|-------------|---------|
 | -f     | --force-download | Force re-download of the source file | False   |
-| -k     | --keep-files     | Keep downloaded source files after import | False   |
+| -d     | --delete-files     | Delete downloaded source files after import | False   |
 | -c     | --connection-string TEXT | SQLAlchemy engine URL | sqlite:///ipni.db | 
 
 If you want to use different relational database (MySQL, PostgreSQL, etc.), provide the connection string with `-c` option. Examples:
