@@ -1,15 +1,18 @@
 version: "1.0"
 name: biokb_ipni
+# for dev: podman-compose --env-file .env_template up -d
 
 services:
   api:
     build: .
     container_name: biokb_ipni
     environment:
-      CONNECTION_STR: "mysql+pymysql://${MYSQL_USER}:${MYSQL_PASSWORD}@${MYSQL_HOST}:${MYSQL_PORT}/${MYSQL_DATABASE}"
-      NEO4J_URI: "bolt://${NEO4J_HOST}:${NEO4J_PORT_BOLT}"
+      CONNECTION_STR: ${CONNECTION_STR}
+      NEO4J_URI: ${NEO4J_URI}
+      IPNI_API_USERNAME: ${IPNI_API_USERNAME}
+      IPNI_API_PASSWORD: ${IPNI_API_PASSWORD}
     ports:
-      - ${API_PORT}:8000
+      - ${IPNI_API_PORT}:8000
     volumes:
       - ~/.biokb/ipni:/root/.biokb/ipni
 

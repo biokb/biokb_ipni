@@ -91,7 +91,7 @@ If you have docker or podman on your system, the easiest way to run all componen
 ```bash
 git clone https://github.com/biokb/biokb_ipni.git
 cd biokb_ipni
-podman-compose -f docker-compose.db_neo.yml --env-file .env_template up -d
+podman-compose -f docker-compose.mysql_neo4j_pma.yml --env-file .env_template up -d
 
 ```
 http://localhost:8000/docs

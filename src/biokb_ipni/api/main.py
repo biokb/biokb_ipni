@@ -39,8 +39,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-USERNAME = os.environ.get("API_USERNAME", "admin")
-PASSWORD = os.environ.get("API_PASSWORD", "admin")
+USERNAME = os.environ.get("IPNI_API_USERNAME", "admin")
+PASSWORD = os.environ.get("IPNI_API_PASSWORD", "admin")
 
 
 def get_engine() -> Engine:
@@ -197,17 +197,17 @@ async def get_report(
 async def import_neo4j(
     credentials: HTTPBasicCredentials = Depends(verify_credentials),
     uri: str | None = Query(
-        NEO4J_URI,
+        default=os.environ.get("NEO4J_URI") or NEO4J_URI,
         description="The Neo4j URI. If not provided, "
         "the default from environment variable is used.",
     ),
     user: str | None = Query(
-        NEO4J_USER,
+        default=os.environ.get("NEO4J_USER") or NEO4J_USER,
         description="The Neo4j user. If not provided,"
         " the default from environment variable is used.",
     ),
     password: str | None = Query(
-        NEO4J_PASSWORD,
+        default=NEO4J_PASSWORD,
         description="The Neo4j password. If not provided,"
         " the default from environment variable is used.",
     ),
