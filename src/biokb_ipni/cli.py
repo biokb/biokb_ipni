@@ -34,7 +34,13 @@ def setup_logging(ctx, param, value):
 
 @click.group()
 @click.version_option(__version__)
-@click.option("-v", count=True, callback=setup_logging, expose_value=False)
+@click.option(
+    "-v",
+    count=True,
+    callback=setup_logging,
+    expose_value=False,
+    help="Increase verbosity (use -vv for debug level)",
+)
 def main():
     """Import in RDBMS, create turtle files and import into Neo4J.
 
