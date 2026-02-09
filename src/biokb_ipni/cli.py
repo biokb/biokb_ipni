@@ -150,7 +150,7 @@ def import_neo4j(uri: str, user: str, password: Optional[str]):
     "--host", "-h", default="0.0.0.0", help="API server host [default: 0.0.0.0]"
 )
 @click.option("--port", "-P", default=8000, help="API server port [default: 8000]")
-@click.option("--user", "-u", default="admin", help="API username [default=admin]")
+@click.option("--user", "-u", default="admin", help="API username [default: admin]")
 @click.option("--password", "-p", default="admin", help="API password [default: admin]")
 def run_server(host: str, port: int, user: str, password: str) -> None:
     """Run the API server.
