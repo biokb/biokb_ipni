@@ -1,12 +1,13 @@
 import logging
 import os
+from typing import Optional
 
 import click
 from sqlalchemy import create_engine
 
 from biokb_ipni import __version__
 from biokb_ipni.api.main import run_api
-from biokb_ipni.constants import DB_DEFAULT_CONNECTION_STR, NEO4J_USER, PROJECT_NAME
+from biokb_ipni.constants import DB_DEFAULT_CONNECTION_STR, NEO4J_URI, NEO4J_USER
 from biokb_ipni.db.manager import DbManager
 from biokb_ipni.rdf.neo4j_importer import Neo4jImporter
 from biokb_ipni.rdf.turtle import TurtleCreator
@@ -69,7 +70,9 @@ def main():
     default=DB_DEFAULT_CONNECTION_STR,
     help=f"SQLAlchemy engine URL [default: {DB_DEFAULT_CONNECTION_STR}]",
 )
-def import_data(force_download: bool, connection_string: str, delete_files: bool):
+def import_data(
+    force_download: bool, connection_string: str, delete_files: bool
+) -> None:
     """Import data.
 
     Args:
@@ -104,19 +107,35 @@ def create_ttls(connection_string: str):
     )
 
 
+neo4j_uri = os.getenv("NEO4J_URI", NEO4J_URI)
+neo4j_user = os.getenv("NEO4J_USER", NEO4J_USER)
+
+
 @main.command("import-neo4j")
 @click.option(
     "--uri",
     "-i",
-    default="bolt://localhost:7687",
-    help='Neo4j URI [default="bolt://localhost:7687"]',
+    default=neo4j_uri,
+    help=f'Neo4j URI [default="{neo4j_uri}"]',
 )
 @click.option(
-    "--user", "-u", default=NEO4J_USER, help='Neo4j username [default="neo4j"]'
+    "--user",
+    "-u",
+    default=neo4j_user,
+    help=f'Neo4j username [default="{neo4j_user}"]',
 )
-@click.option("--password", "-p", required=True, help="Neo4j password")
-def import_neo4j(uri: str, user: str, password: str):
+@click.option("--password", "-p", default=None, required=False, help="Neo4j password")
+def import_neo4j(uri: str, user: str, password: Optional[str]):
     """Import TTL files into Neo4j database."""
+    if password is None:
+        password = click.prompt(
+            "Please enter the Neo4j password (input will be hidden)", hide_input=True
+        )
+    else:
+        click.echo(
+            "It is not recommended to provide the Neo4j password via command line."
+        )
+
     Neo4jImporter(neo4j_uri=uri, neo4j_user=user, neo4j_pwd=password).import_ttls()
 
 
@@ -127,12 +146,7 @@ def import_neo4j(uri: str, user: str, password: str):
 @click.option("--port", "-P", default=8000, help="API server port [default: 8000]")
 @click.option("--user", "-u", default="admin", help="API username [default=admin]")
 @click.option("--password", "-p", default="admin", help="API password [default: admin]")
-def run_server(
-    host: str = "0.0.0.0",
-    port: int = 8000,
-    user: str = "admin",
-    password: str = "admin",
-) -> None:
+def run_server(host: str, port: int, user: str, password: str) -> None:
     """Run the API server.
 
     Args:
