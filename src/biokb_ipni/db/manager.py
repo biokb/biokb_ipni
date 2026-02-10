@@ -6,6 +6,7 @@ import zipfile
 from typing import Any, Optional
 
 import pandas as pd
+import requests
 from sqlalchemy import Engine, create_engine, event, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.session import Session
@@ -126,9 +127,13 @@ class DbManager:
         if force_download or not os.path.exists(PATH_TO_TAXTREE_ZIP_FILE):
             os.makedirs(TAXTREE_DATA_FOLDER, exist_ok=True)
             try:
-                urllib.request.urlretrieve(
-                    TAXTREE_DOWNLOAD_URL, PATH_TO_TAXTREE_ZIP_FILE
-                )
+                response = requests.get(TAXTREE_DOWNLOAD_URL)
+                if response.status_code == 200:
+                    with open(PATH_TO_TAXTREE_ZIP_FILE, "wb") as f:
+                        f.write(response.content)
+                # urllib.request.urlretrieve(
+                #     TAXTREE_DOWNLOAD_URL, PATH_TO_TAXTREE_ZIP_FILE
+                # )
             except Exception as e:
                 logger.error(f"Failed to download {TAXTREE_DOWNLOAD_URL}: {e}")
                 raise
@@ -157,7 +162,10 @@ class DbManager:
         if force_download or not os.path.exists(self.path_to_zip_file):
             os.makedirs(DATA_FOLDER, exist_ok=True)
             try:
-                urllib.request.urlretrieve(DOWNLOAD_URL, self.path_to_zip_file)
+                response = requests.get(DOWNLOAD_URL)
+                if response.status_code == 200:
+                    with open(self.path_to_zip_file, "wb") as f:
+                        f.write(response.content)
             except Exception as e:
                 logger.error(f"Failed to download {DOWNLOAD_URL}: {e}")
                 raise
