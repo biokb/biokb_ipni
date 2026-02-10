@@ -53,6 +53,7 @@ services:
   ipni:
     build: .
     image: biokb_ipni_api:latest
+    container_name: biokb_ipni
     ports:
       - "${IPNI_API_PORT}:8000"
     environment:
@@ -60,6 +61,8 @@ services:
       NEO4J_URI: ${NEO4J_URI}
       NEO4J_USER: ${NEO4J_USER}
       NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+      IPNI_API_USERNAME: ${IPNI_API_USERNAME}
+      IPNI_API_PASSWORD: ${IPNI_API_PASSWORD}
     volumes:
       - ${BIOKB_FOLDER}:/root/.biokb
     networks:
