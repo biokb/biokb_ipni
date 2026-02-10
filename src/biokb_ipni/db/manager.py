@@ -125,7 +125,13 @@ class DbManager:
 
         if force_download or not os.path.exists(PATH_TO_TAXTREE_ZIP_FILE):
             os.makedirs(TAXTREE_DATA_FOLDER, exist_ok=True)
-            urllib.request.urlretrieve(TAXTREE_DOWNLOAD_URL, PATH_TO_TAXTREE_ZIP_FILE)
+            try:
+                urllib.request.urlretrieve(
+                    TAXTREE_DOWNLOAD_URL, PATH_TO_TAXTREE_ZIP_FILE
+                )
+            except Exception as e:
+                logger.error(f"Failed to download {TAXTREE_DOWNLOAD_URL}: {e}")
+                raise
 
         # NCBI Taxonomy
         # =============================================================================
@@ -150,7 +156,11 @@ class DbManager:
 
         if force_download or not os.path.exists(self.path_to_zip_file):
             os.makedirs(DATA_FOLDER, exist_ok=True)
-            urllib.request.urlretrieve(DOWNLOAD_URL, self.path_to_zip_file)
+            try:
+                urllib.request.urlretrieve(DOWNLOAD_URL, self.path_to_zip_file)
+            except Exception as e:
+                logger.error(f"Failed to download {DOWNLOAD_URL}: {e}")
+                raise
             logger.info(f"{DOWNLOAD_URL} downloaded to {self.path_to_zip_file}")
 
         # -----------------------------------------------------------------------------
