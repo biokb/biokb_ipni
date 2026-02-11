@@ -105,6 +105,7 @@ class NameSearchResult(BaseModel):
 class NameSearchSimilarNameResult(BaseModel):
     calculate_with: Literal["exact", "levenshtein", "metaphone_jaro", "pattern_match"]
     scientific_name: str
+    rank: str
     ipni_id: str
     similarity: float = Field(le=1.0)
 

@@ -278,7 +278,9 @@ async def names_find_similar(
     search_for_name = re.sub(r"\s+", " ", search_for_name.strip())
     name_splitted = [x.strip() for x in search_for_name.split(" ")]
 
-    stmt = select(models.Name.scientific_name, models.Name.id).select_from(models.Name)
+    stmt = select(
+        models.Name.scientific_name, models.Name.id, models.Name.rank
+    ).select_from(models.Name)
 
     # First, check for exact match
     # If an exact match is found, return it immediately.
@@ -286,12 +288,13 @@ async def names_find_similar(
         stmt.where(models.Name.scientific_name == search_for_name)
     ).all()
     if exact_results:
-        return_values = []
+        return_values: list[schemas.NameSearchSimilarNameResult] = []
         for exact_result in exact_results:
             return_values.append(
                 schemas.NameSearchSimilarNameResult(
                     calculate_with="exact",
                     scientific_name=exact_result.scientific_name,
+                    rank=exact_result.rank,
                     similarity=1.0,
                     ipni_id=exact_result.id,
                 )
@@ -306,7 +309,7 @@ async def names_find_similar(
 
     # Get names that start with same letter to reduce the dataset for phonetic comparison
     candidate_stmt = (
-        select(models.Name.scientific_name, models.Name.id)
+        select(models.Name.scientific_name, models.Name.id, models.Name.rank)
         .select_from(models.Name)
         .where(models.Name.scientific_name.like(f"{first_letter}%"))
     )
@@ -338,6 +341,7 @@ async def names_find_similar(
                     schemas.NameSearchSimilarNameResult(
                         calculate_with="metaphone_jaro",
                         scientific_name=candidate.scientific_name,
+                        rank=candidate.rank,
                         ipni_id=candidate.id,
                         similarity=round(final_similarity, 2),
                     )
@@ -370,6 +374,7 @@ async def names_find_similar(
                 schemas.NameSearchSimilarNameResult(
                     calculate_with="pattern_match",
                     scientific_name=result.scientific_name,
+                    rank=result.rank,
                     ipni_id=result.id,
                     similarity=round(ratio, 2),
                 )
@@ -394,6 +399,7 @@ async def names_find_similar(
                     schemas.NameSearchSimilarNameResult(
                         calculate_with="levenshtein",
                         scientific_name=result.scientific_name,
+                        rank=result.rank,
                         ipni_id=result.id,
                         similarity=round(ratio, 2),  # Convert to percentage
                     )
