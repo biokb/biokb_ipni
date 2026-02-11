@@ -65,8 +65,6 @@ services:
       IPNI_API_PASSWORD: ${IPNI_API_PASSWORD}
     volumes:
       - ${BIOKB_FOLDER}:/root/.biokb
-    networks:
-      - biokb_network
 
 volumes:
   mysql_data:
