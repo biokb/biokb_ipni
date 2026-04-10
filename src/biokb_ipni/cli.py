@@ -3,7 +3,9 @@ import os
 from typing import Optional
 
 import click
+from dotenv import load_dotenv
 from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
 
 from biokb_ipni import __version__
 from biokb_ipni.api.main import run_api
@@ -76,21 +78,48 @@ def main():
     default=DB_DEFAULT_CONNECTION_STR,
     help=f"SQLAlchemy engine URL [default: {DB_DEFAULT_CONNECTION_STR}]",
 )
+@click.option(
+    "-e",
+    "--env",
+    type=str,
+    default=None,
+    help="Environment file to load for configuration (default: None)",
+)
 def import_data(
-    force_download: bool, connection_string: str, delete_files: bool
+    force_download: bool,
+    connection_string: Optional[str],
+    delete_files: bool = False,
+    env: Optional[str] = None,
 ) -> None:
     """Import data.
 
     Args:
         force_download (bool): Force re-download of the source file (default: False)
-        connection_string (str): SQLAlchemy engine URL (default: sqlite:///~/.biokb/biokb.db)
+        connection_string (Optional[str]): SQLAlchemy engine URL (default: sqlite:///~/.biokb/biokb.db)
         delete_files (bool): Delete downloaded source files after import (default: False)
+        env (Optional[str]): Environment file to load for configuration (default: None)
     """
-    engine = create_engine(connection_string)
+    if env:
+        if connection_string:
+            logger.warning(
+                "Both environment file and connection string provided. Environment have priority."
+            )
+        if not os.path.exists(env):
+            logger.error("Environment file %s not found.", env)
+            return
+        load_dotenv(env, override=True)
+        connection_string = os.getenv("CONNECTION_STR")
+        if connection_string is None:
+            logger.warning(
+                "CONNECTION_STR environment variable not found. Using default connection string."
+            )
+
+    engine: Engine | None = (
+        create_engine(connection_string) if connection_string else None
+    )
     DbManager(engine=engine).import_data(
         force_download=force_download, delete_files=delete_files
     )
-    logger.info(f"Data imported successfully to {connection_string}")
 
 
 @main.command("create-ttls")
