@@ -16,14 +16,9 @@ from biokb_ipni.tools import get_engine
 logger = logging.getLogger(__name__)
 
 
-def setup_logging(ctx, param, value):
-    if value == 0:
-        return value
-
+def _setup_default_cli_logging() -> None:
     package_logger = logging.getLogger("biokb_ipni")
-    package_logger.setLevel(logging.INFO if value == 1 else logging.DEBUG)
 
-    # Attach one CLI stream handler to the package logger hierarchy.
     has_cli_handler = any(
         getattr(handler, "_biokb_cli_handler", False)
         for handler in package_logger.handlers
@@ -35,20 +30,13 @@ def setup_logging(ctx, param, value):
         )
         setattr(stream_handler, "_biokb_cli_handler", True)
         package_logger.addHandler(stream_handler)
-    package_logger.propagate = False
 
-    return value
+    package_logger.setLevel(logging.INFO)
+    package_logger.propagate = False
 
 
 @click.group()
 @click.version_option(__version__)
-@click.option(
-    "-v",
-    count=True,
-    callback=setup_logging,
-    expose_value=False,
-    help="Increase verbosity (use -vv for debug level)",
-)
 def main():
     """Import in RDBMS, create turtle files and import into Neo4J.
 
@@ -57,7 +45,7 @@ def main():
     2. Create TTL files using `create-ttls` command.\n
     3. Import TTL files into Neo4j using `import-neo4j` command.\n
     """
-    pass
+    _setup_default_cli_logging()
 
 
 @main.command("import-data")

@@ -74,8 +74,8 @@ class DbManager:
             path_to_zip_file (str | None): Path to the zip file containing data. If None, uses default path.
             force_download (bool): Whether to force download the data.
         """
+        logger.info("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
         connection_str = os.getenv("CONNECTION_STR", DB_DEFAULT_CONNECTION_STR)
-        print(connection_str)
         self.__engine: Engine = engine if engine else create_engine(str(connection_str))
         if self.__engine.dialect.name == "sqlite":
             with self.__engine.connect() as connection:
@@ -159,7 +159,7 @@ class DbManager:
 
         # IPNI
         # =============================================================================
-
+        logger.info("Importing IPNI data")
         if force_download or not os.path.exists(self.path_to_zip_file):
             os.makedirs(DATA_FOLDER, exist_ok=True)
             try:
