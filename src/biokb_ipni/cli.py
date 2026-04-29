@@ -3,33 +3,39 @@ import os
 from typing import Optional
 
 import click
-from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
 from biokb_ipni import __version__
-from biokb_ipni.api.main import run_api
 from biokb_ipni.constants import DB_DEFAULT_CONNECTION_STR, NEO4J_URI, NEO4J_USER
 from biokb_ipni.db.manager import DbManager
 from biokb_ipni.rdf.neo4j_importer import Neo4jImporter
 from biokb_ipni.rdf.turtle import TurtleCreator
+from biokb_ipni.tools import get_engine
 
 logger = logging.getLogger(__name__)
 
 
 def setup_logging(ctx, param, value):
-    # Only set up logging if the user actually asks for it
-    if value == 1:
-        logging.getLogger("biokb_ipni").setLevel(logging.INFO)
-    elif value >= 2:
-        logging.getLogger("biokb_ipni").setLevel(logging.DEBUG)
+    if value == 0:
+        return value
 
-    # We must add a handler so the logs actually print to the screen
-    if value > 0:
-        ch = logging.StreamHandler()
-        formatter = logging.Formatter("%(name)s - %(levelname)s - %(message)s")
-        ch.setFormatter(formatter)
-        logging.getLogger("fetcher").addHandler(ch)
+    package_logger = logging.getLogger("biokb_ipni")
+    package_logger.setLevel(logging.INFO if value == 1 else logging.DEBUG)
+
+    # Attach one CLI stream handler to the package logger hierarchy.
+    has_cli_handler = any(
+        getattr(handler, "_biokb_cli_handler", False)
+        for handler in package_logger.handlers
+    )
+    if not has_cli_handler:
+        stream_handler = logging.StreamHandler()
+        stream_handler.setFormatter(
+            logging.Formatter("%(name)s - %(levelname)s - %(message)s")
+        )
+        setattr(stream_handler, "_biokb_cli_handler", True)
+        package_logger.addHandler(stream_handler)
+    package_logger.propagate = False
 
     return value
 
@@ -75,7 +81,7 @@ def main():
     "-c",
     "--connection-string",
     type=str,
-    default=DB_DEFAULT_CONNECTION_STR,
+    default=None,
     help=f"SQLAlchemy engine URL [default: {DB_DEFAULT_CONNECTION_STR}]",
 )
 @click.option(
@@ -93,30 +99,23 @@ def import_data(
 ) -> None:
     """Import data.
 
+    The connection string for the database can be provided in the following order of priority:\n
+     1. .env file with CONNECTION_STR variable (if exists)\n
+     2. -e/--env option specifying the environment file\n
+     3. -c/--connection-string option specifying the connection string directly\n
+     4. Default connection string (sqlite:///~/.biokb/biokb
+
     Args:
         force_download (bool): Force re-download of the source file (default: False)
         connection_string (Optional[str]): SQLAlchemy engine URL (default: sqlite:///~/.biokb/biokb.db)
         delete_files (bool): Delete downloaded source files after import (default: False)
         env (Optional[str]): Environment file to load for configuration (default: None)
     """
-    if env:
-        if connection_string:
-            logger.warning(
-                "Both environment file and connection string provided. Environment have priority."
-            )
-        if not os.path.exists(env):
-            logger.error("Environment file %s not found.", env)
-            return
-        load_dotenv(env, override=True)
-        connection_string = os.getenv("CONNECTION_STR")
-        if connection_string is None:
-            logger.warning(
-                "CONNECTION_STR environment variable not found. Using default connection string."
-            )
-
-    engine: Engine | None = (
-        create_engine(connection_string) if connection_string else None
-    )
+    try:
+        engine: Engine | None = get_engine(connection_string, env)
+    except Exception as e:
+        logger.error(f"An error occurred during data import: {e}")
+        return
     DbManager(engine=engine).import_data(
         force_download=force_download, delete_files=delete_files
     )
@@ -195,6 +194,8 @@ def run_server(host: str, port: int, user: str, password: str) -> None:
     os.environ["API_PASSWORD"] = password
     host_shown = "127.0.0.1" if host == "0.0.0.0" else host
     click.echo(f"API server running at http://{host_shown}:{port}/docs#/")
+    from biokb_ipni.api.main import run_api
+
     run_api(host=host, port=port)
 
 

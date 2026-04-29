@@ -1,7 +1,6 @@
 import logging
 import os
 import sqlite3
-import urllib.request
 import zipfile
 from typing import Any, Optional
 
@@ -75,11 +74,13 @@ class DbManager:
             path_to_zip_file (str | None): Path to the zip file containing data. If None, uses default path.
             force_download (bool): Whether to force download the data.
         """
-        connection_str: str = os.getenv("CONNECTION_STR", DB_DEFAULT_CONNECTION_STR)
+        connection_str = os.getenv("CONNECTION_STR", DB_DEFAULT_CONNECTION_STR)
+        print(connection_str)
         self.__engine: Engine = engine if engine else create_engine(str(connection_str))
         if self.__engine.dialect.name == "sqlite":
             with self.__engine.connect() as connection:
                 connection.execute(text("pragma foreign_keys=ON"))
+
         logger.info("Engine: %s", self.__engine)
         self.Session = sessionmaker(bind=self.__engine)
         self.path_to_zip_file = path_to_zip_file or PATH_TO_ZIP_FILE
@@ -151,7 +152,7 @@ class DbManager:
                     names=RANKED_LINEAGE_COLUMNS,
                     engine="python",
                     index_col=False,
-                    dtype=RANKED_LINEAGE_DTYPES,
+                    dtype=RANKED_LINEAGE_DTYPES,  # type: ignore
                 )
                 df_tax = df[df["phylum"] == "Streptophyta"][["tax_id", "tax_name"]]
                 df = None  # free memory
@@ -226,9 +227,7 @@ class DbManager:
             df_family,
             how="inner",
             on="family",
-        )[
-            ["id", "family_id"]
-        ]  # foreign key to Name (id) and Family (family_id)
+        )[["id", "family_id"]]  # foreign key to Name (id) and Family (family_id)
         df_nameid_family = None  # free memory
         df_family = None  # free memory
 
