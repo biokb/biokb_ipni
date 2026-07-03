@@ -4,17 +4,17 @@ import re
 import secrets
 from contextlib import asynccontextmanager
 from difflib import SequenceMatcher
-from typing import AsyncGenerator, List
+from typing import AsyncGenerator, Generator, List
 
 import jellyfish
 import Levenshtein
 import uvicorn
-from fastapi import Body, Depends, FastAPI, HTTPException, Query, status
+from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy import Engine, create_engine, func, or_, select
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy.orm import Session, aliased, sessionmaker
 
 # from database import SessionLocal
 from sqlalchemy.sql import text
@@ -49,9 +49,13 @@ def get_engine() -> Engine:
     return engine
 
 
-def get_session():
-    engine: Engine = get_engine()
-    session = Session(bind=engine)
+def create_session_factory(engine: Engine) -> sessionmaker[Session]:
+    return sessionmaker(bind=engine, class_=Session, expire_on_commit=False)
+
+
+def get_session(request: Request) -> Generator[Session, None, None]:
+    session_factory: sessionmaker[Session] = request.app.state.session_factory
+    session = session_factory()
     try:
         yield session
     finally:
@@ -62,10 +66,11 @@ def get_session():
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Initialize app resources on startup and cleanup on shutdown."""
     engine = get_engine()
+    app.state.engine = engine
+    app.state.session_factory = create_session_factory(engine)
     manager.DbManager(engine)
     yield
-    # Clean up resources if needed
-    pass
+    app.state.engine.dispose()
 
 
 description = """The [International Plant Names Index](https://www.ipni.org/) (IPNI) 
@@ -94,7 +99,7 @@ app = FastAPI(
     description=description,
     version="0.1.0",
     lifespan=lifespan,
-    root_path=os.environ.get("API_IPNI_ROOT_PATH", "")
+    root_path=os.environ.get("API_IPNI_ROOT_PATH", ""),
 )
 
 
