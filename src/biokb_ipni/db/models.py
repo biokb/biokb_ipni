@@ -109,8 +109,8 @@ class Name(Base):
     )
 
     # relationships
-    family: Mapped["Family"] = relationship(back_populates="names")
-    reference: Mapped["Reference"] = relationship(back_populates="names")
+    family: Mapped[Optional["Family"]] = relationship(back_populates="names")
+    reference: Mapped[Optional["Reference"]] = relationship(back_populates="names")
     type_materials: Mapped[list["TypeMaterial"]] = relationship(back_populates="name")
 
     primary_relations: Mapped[list["NameRelation"]] = relationship(
@@ -124,9 +124,9 @@ class Name(Base):
     )
 
     @property
-    def family_name(self) -> str:
+    def family_name(self) -> str | None:
         """Get the family name associated with this name."""
-        return self.family.family if self.family else ""
+        return self.family.family if self.family else None
 
     def __repr__(self) -> str:
         return f"<Name:id={self.id!r}, scientific_name={self.scientific_name!r}>"
