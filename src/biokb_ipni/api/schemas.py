@@ -63,7 +63,6 @@ class NameBase(BaseModel):
 
 
 class NameWithId(NameBase):
-
     model_config = ConfigDict(from_attributes=True)
 
     id: str
@@ -103,11 +102,23 @@ class NameSearchResult(BaseModel):
 
 
 class NameSearchSimilarNameResult(BaseModel):
-    calculate_with: Literal["exact", "levenshtein", "metaphone_jaro", "pattern_match"]
+    calculate_with: Optional[
+        Literal["exact", "levenshtein", "metaphone_jaro", "pattern_match"]
+    ] = None
+    id: str
     scientific_name: str
     rank: str
-    ipni_id: str
-    similarity: float = Field(le=1.0)
+    status: str
+    authorship: Optional[str]
+    published_in_year: Optional[int]
+    published_in_page: Optional[int]
+    remarks: Optional[str]
+    family_name: Optional[str]
+    tax_id: Optional[int]
+    similarity: Optional[float] = None
+    reference: Optional["ReferenceBase"] = None
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 # -------------------------------------------------------------------
@@ -144,6 +155,8 @@ class ReferenceBase(BaseModel):
     isbn: Optional[str] = None
     link: Optional[str] = None
     remarks: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ReferenceWithId(ReferenceBase):
@@ -209,7 +222,6 @@ class FamilySearchResult(CountOffsetLimit):
 # NameRelation Schemas
 # -------------------------------------------------------------------
 class NameRelationBase(BaseModel):
-
     type: str
     related_name_id: Optional[str] = None
     name_id: Optional[str] = None
