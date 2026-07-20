@@ -178,3 +178,5 @@ notebooks/test.db
 tests/db/test.db
 .env_local
 docs/notebooks/test.ipynb
+.env_localhost
+.temp
