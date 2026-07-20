@@ -280,31 +280,34 @@ async def names_find_similar(
         },
     ),
 ):
-    """Fuzzy search for similar names using LEVENSHTEIN algorithm."""
+    """Fuzzy search for similar names using exact match, Metaphone, and Jaro-Winkler algorithms.
+
+    If more than 2 words are provided, the assumption is that the first two words are the genus
+    and species and last words are the authorship for exact match."""
     search_for_name = re.sub(r"\s+", " ", search_for_name.strip())
     name_splitted = [x.strip() for x in search_for_name.split(" ")]
 
-    stmt = select(
-        models.Name.scientific_name, models.Name.id, models.Name.rank
-    ).select_from(models.Name)
+    query = session.query(models.Name)
 
     # First, check for exact match
     # If an exact match is found, return it immediately.
-    exact_results = session.execute(
-        stmt.where(models.Name.scientific_name == search_for_name)
-    ).all()
+    search_for_exact_name = (
+        " ".join(name_splitted[:2]) if len(name_splitted) > 1 else search_for_name
+    )
+    authorship = " ".join(name_splitted[2:]) if len(name_splitted) > 2 else None
+    query = query.where(models.Name.scientific_name == search_for_exact_name)
+    if authorship:
+        query = query.where(models.Name.authorship == authorship)
+    exact_results = query.all()
     if exact_results:
+        calculate_with = "exact"
+        similarity = 1.0
         return_values: list[schemas.NameSearchSimilarNameResult] = []
         for exact_result in exact_results:
-            return_values.append(
-                schemas.NameSearchSimilarNameResult(
-                    calculate_with="exact",
-                    scientific_name=exact_result.scientific_name,
-                    rank=exact_result.rank,
-                    similarity=1.0,
-                    ipni_id=exact_result.id,
-                )
-            )
+            entry = schemas.NameSearchSimilarNameResult.model_validate(exact_result)
+            entry.calculate_with = calculate_with
+            entry.similarity = similarity
+            return_values.append(entry)
         return return_values
 
     # If no exact match, use phonetic similarity with Metaphone algorithm
@@ -314,13 +317,10 @@ async def names_find_similar(
     first_letter = search_for_name[0].upper()
 
     # Get names that start with same letter to reduce the dataset for phonetic comparison
-    candidate_stmt = (
-        select(models.Name.scientific_name, models.Name.id, models.Name.rank)
-        .select_from(models.Name)
-        .where(models.Name.scientific_name.like(f"{first_letter}%"))
+    query = session.query(models.Name).where(
+        models.Name.scientific_name.like(f"{first_letter}%")
     )
-
-    candidates = session.execute(candidate_stmt).all()
+    candidates = query.all()
 
     # Filter candidates by Metaphone similarity and Jaro-Winkler
     phonetic_matches = []
@@ -343,15 +343,10 @@ async def names_find_similar(
             final_similarity = max(jaro_similarity, sequence_ratio)
 
             if final_similarity > 0.5:
-                phonetic_matches.append(
-                    schemas.NameSearchSimilarNameResult(
-                        calculate_with="metaphone_jaro",
-                        scientific_name=candidate.scientific_name,
-                        rank=candidate.rank,
-                        ipni_id=candidate.id,
-                        similarity=round(final_similarity, 2),
-                    )
-                )
+                entry = schemas.NameSearchSimilarNameResult.model_validate(candidate)
+                entry.calculate_with = "metaphone_jaro"
+                entry.similarity = round(final_similarity, 2)
+                phonetic_matches.append(entry)
 
     if phonetic_matches:
         return sorted(phonetic_matches, key=lambda x: x.similarity, reverse=True)[:30]
@@ -364,33 +359,26 @@ async def names_find_similar(
         search_str = f"{search_for_name}%"
     else:
         search_str = f"{name_splitted[0]}% {name_splitted[1]}%"
-    stmt3 = (
-        select(models.Name.scientific_name, models.Name.id)
-        .select_from(models.Name)
-        .where(models.Name.scientific_name.like(search_str))
+    query = session.query(models.Name).where(
+        models.Name.scientific_name.like(search_str)
     )
-    results = session.execute(stmt3).all()
+    results = query.all()
 
     # check for similarity
 
     for result in results:
         ratio = SequenceMatcher(None, search_for_name, result.scientific_name).ratio()
         if ratio > 0.3:  # Threshold for similarity
-            ratios.append(
-                schemas.NameSearchSimilarNameResult(
-                    calculate_with="pattern_match",
-                    scientific_name=result.scientific_name,
-                    rank=result.rank,
-                    ipni_id=result.id,
-                    similarity=round(ratio, 2),
-                )
-            )
+            entry = schemas.NameSearchSimilarNameResult.model_validate(result)
+            entry.calculate_with = "pattern_match"
+            entry.similarity = round(ratio, 2)
+            ratios.append(entry)
     if ratios:
         return sorted(ratios, key=lambda x: x.similarity, reverse=True)
 
     # if no results Levenshtein
     if not ratios:
-        stmt4 = stmt.where(
+        stmt4 = select(models.Name).where(
             or_(
                 models.Name.scientific_name.like(f"{search_for_name[0]}%"),
                 models.Name.scientific_name.like(f"%{search_for_name[-4:]}"),
@@ -401,15 +389,10 @@ async def names_find_similar(
         for result in results:
             ratio = Levenshtein.ratio(search_for_name, result.scientific_name)
             if ratio > 0.3:
-                ratios.append(
-                    schemas.NameSearchSimilarNameResult(
-                        calculate_with="levenshtein",
-                        scientific_name=result.scientific_name,
-                        rank=result.rank,
-                        ipni_id=result.id,
-                        similarity=round(ratio, 2),  # Convert to percentage
-                    )
-                )
+                entry = schemas.NameSearchSimilarNameResult.model_validate(result)
+                entry.calculate_with = "levenshtein"
+                entry.similarity = round(ratio, 2)
+                ratios.append(entry)
         if ratios:
             return sorted(ratios, key=lambda x: x.similarity, reverse=True)[:3]
 
