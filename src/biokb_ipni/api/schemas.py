@@ -116,7 +116,7 @@ class NameSearchSimilarNameResult(BaseModel):
     family_name: Optional[str]
     tax_id: Optional[int]
     similarity: Optional[float] = None
-    reference: Optional["ReferenceBase"] = None
+    reference: Optional["ReferenceWithId"] = None
 
     model_config = ConfigDict(from_attributes=True)
 
