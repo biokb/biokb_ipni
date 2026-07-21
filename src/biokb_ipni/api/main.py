@@ -275,9 +275,15 @@ async def names_find_similar(
         ...,
         description="Name to search for",
         openapi_examples={
-            "example 1": {"value": "acHila meliflium"},
-            "example 2": {"value": "Almue Fera"},
+            "example 1": {"value": "Phaseolus vulgare L."},
+            "example 2": {"value": "acHila meliflium"},
+            "example 3": {"value": "Almue Fera"},
         },
+    ),
+    first_x_letters: int = Query(
+        2,
+        minimum=1,
+        description="Number of first letters at the beginning of the name which have to be identical to the search name. This is used to reduce the number of candidates for similarity search.",
     ),
 ):
     """Fuzzy search for similar names using exact match, Metaphone, and Jaro-Winkler algorithms.
@@ -291,11 +297,11 @@ async def names_find_similar(
 
     # First, check for exact match
     # If an exact match is found, return it immediately.
-    search_for_exact_name = (
+    search_name = (
         " ".join(name_splitted[:2]) if len(name_splitted) > 1 else search_for_name
     )
     authorship = " ".join(name_splitted[2:]) if len(name_splitted) > 2 else None
-    query = query.where(models.Name.scientific_name == search_for_exact_name)
+    query = query.where(models.Name.scientific_name == search_name)
     if authorship:
         query = query.where(models.Name.authorship == authorship)
     exact_results = query.all()
@@ -314,13 +320,29 @@ async def names_find_similar(
     # Metaphone is better than soundex for non-English names including Latin scientific names
     # Also try Jaro-Winkler which works well for scientific names with shared prefixes
     name_metaphone = jellyfish.metaphone(search_for_name)
-    first_letter = search_for_name[0].upper()
+
+    search_authorship_prefix = None
+    search_for_prefixes = f"{name_splitted[0][:first_x_letters]}%"
+    if len(name_splitted) >= 2:
+        search_for_prefixes += f"{name_splitted[1][:first_x_letters]}%"
+    if len(name_splitted) >= 3:
+        search_authorship_prefix = f"{name_splitted[2][:first_x_letters]}%"
 
     # Get names that start with same letter to reduce the dataset for phonetic comparison
     query = session.query(models.Name).where(
-        models.Name.scientific_name.like(f"{first_letter}%")
+        models.Name.scientific_name.like(f"{search_for_prefixes}")
     )
-    candidates = query.all()
+    count_query_authorship = 0
+    query_authorship = None
+    if search_authorship_prefix:
+        query_authorship = query.where(
+            models.Name.authorship.like(f"{search_authorship_prefix}")
+        )
+        count_query_authorship = query_authorship.count()
+    if count_query_authorship > 0 and query_authorship is not None:
+        candidates = query_authorship.all()
+    else:
+        candidates = query.all()
 
     # Filter candidates by Metaphone similarity and Jaro-Winkler
     phonetic_matches = []
@@ -355,10 +377,9 @@ async def names_find_similar(
     ratios = []
     # If no phonetic matches, fall back to pattern-based search with Levenshtein distance
 
-    if len(name_splitted) < 2:
-        search_str = f"{search_for_name}%"
-    else:
-        search_str = f"{name_splitted[0]}% {name_splitted[1]}%"
+    search_str = f"{name_splitted[0][:first_x_letters]}%"
+    if len(name_splitted) > 1:
+        search_str += f" {name_splitted[1][:first_x_letters]}%"
     query = session.query(models.Name).where(
         models.Name.scientific_name.like(search_str)
     )
