@@ -2,11 +2,12 @@ import logging
 import sys
 from datetime import date, datetime
 from decimal import Decimal
+from enum import Enum
 from typing import Sequence, Type, TypeAlias, Union, get_args, get_origin
 
 from pydantic import BaseModel
-from sqlalchemy import func, inspect, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
 from biokb_ipni.db import models
 

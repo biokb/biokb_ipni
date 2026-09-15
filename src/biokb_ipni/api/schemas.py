@@ -94,10 +94,14 @@ class NameSearch(OffsetLimit):
     family_id: Optional[int] = None
 
 
-class NameSearchResult(BaseModel):
-    count: int
-    limit: int
-    offset: int
+# class NameSearchResult(BaseModel):
+#     count: int
+#     limit: int
+#     offset: int
+#     results: list[Name]
+
+
+class NameSearchResult(CountOffsetLimit):
     results: list[Name]
 
 

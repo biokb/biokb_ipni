@@ -79,11 +79,13 @@ tests = [
 [project.scripts]
 biokb_ipni = "biokb_ipni.cli:main"
 
-
 [tool.isort]
 profile = "black"
 line_length = 88
 known_first_party = ["biokb_ipni"]
+
+[tool.ruff.lint]
+ignore = ["UP045"]
 
 [tool.mypy]
 python_version = "3.12"

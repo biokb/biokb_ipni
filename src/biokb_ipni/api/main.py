@@ -2,22 +2,19 @@ import logging
 import os
 import re
 import secrets
+from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
 from difflib import SequenceMatcher
-from typing import AsyncGenerator, Generator, List
 
 import jellyfish
 import Levenshtein
 import uvicorn
-from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy import Engine, create_engine, func, or_, select
 from sqlalchemy.orm import Session, aliased, sessionmaker
-
-# from database import SessionLocal
-from sqlalchemy.sql import text
 
 from biokb_ipni.api import schemas
 from biokb_ipni.api.query_tools import SASearchResults, build_dynamic_query
@@ -452,7 +449,6 @@ async def name_statuses(
     result = [
         {"status": s.status, "count": s.count} for s in statuses if s.status is not None
     ]
-    print(result)
     return result
 
 
@@ -469,11 +465,16 @@ async def search_names(
     - Use `%` as wildcard for partial matches in string fields.
     - Get family_id from `/families/search/` endpoint.
     """
-    return build_dynamic_query(
+    result = build_dynamic_query(
         search_obj=search,
         model_cls=models.Name,
         session=session,
     )
+    if "error" in result:
+        return result
+    # Convert explicitly so nested ORM `models.Name` rows are serialized
+    # through the `Name` schema instead of being returned as-is.
+    return schemas.NameSearchResult(**result)
 
 
 ###############################################################################
@@ -550,10 +551,10 @@ async def get_family(
     return {**family_dict, "name_ids": name_ids}
 
 
-@app.get("/families/", response_model=List[schemas.FamilyWithId], tags=[Tag.FAMILY])
+@app.get("/families/", response_model=list[schemas.FamilyWithId], tags=[Tag.FAMILY])
 async def family_families(
     session: Session = Depends(get_session),
-) -> List[models.Family]:
+) -> list[models.Family]:
     """Get all distinct families.
 
     - **tax_id**: NCBI Taxonomy ID for the family https://purl.obolibrary.org/obo/NCBITaxon_{tax_id}.
@@ -584,7 +585,7 @@ async def search_families(
 @app.get("/name_relation_types/", tags=[Tag.NAME_RELATION])
 async def name_relation_types(
     session: Session = Depends(get_session),
-) -> List[str]:
+) -> list[str]:
     """Get all distinct types in name relations."""
     types = (
         session.query(models.NameRelation.type).group_by(models.NameRelation.type).all()

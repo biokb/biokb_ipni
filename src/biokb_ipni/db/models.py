@@ -1,7 +1,7 @@
 """Module defining the database models for the biokb_ipni application."""
 
 from datetime import date as date_type
-from typing import Any, Optional
+from typing import Optional
 
 from sqlalchemy import Date, ForeignKey, String, Text
 from sqlalchemy.dialects.mysql import VARCHAR
