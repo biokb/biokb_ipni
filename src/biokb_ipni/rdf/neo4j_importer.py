@@ -24,7 +24,6 @@ logger.addHandler(logging.NullHandler())
 
 
 class Neo4jImporter:
-
     def __init__(
         self,
         neo4j_uri: str | None = None,
@@ -78,7 +77,7 @@ class Neo4jImporter:
             session.run(cypher)
             session.run(
                 "MATCH (n:Resource) WHERE NOT (n)--() DELETE n"
-            )  # delete orphaned nodes
+            ).consume()  # delete orphaned nodes
 
     def import_ttl(self, path_or_list: str | list[str]) -> bool:
         """Import single turtle file in Neo4J.

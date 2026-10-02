@@ -2,7 +2,7 @@ import logging
 import os.path
 import re
 import shutil
-from typing import List, Optional, TypeVar
+from typing import Optional, TypeVar
 
 from rdflib import RDF, XSD, Graph, Literal, Namespace, URIRef
 from sqlalchemy import Engine, and_, create_engine, or_, select, text
@@ -50,7 +50,7 @@ def get_empty_graph() -> Graph:
 class TurtleCreator:
     """Factory class for generating RDF Turtle files from IPNI database."""
 
-    pass
+    pass  # noqa: PIE790
 
     def __init__(
         self,
@@ -75,7 +75,7 @@ class TurtleCreator:
         Returns:
             Path to the zip file containing all generated Turtle files.
         """
-        logging.info("Starting turtle file generation process.")
+        logger.info("Starting turtle file generation process.")
         os.makedirs(self.__ttls_folder, exist_ok=True)
         self._create_families()
         self._create_locations()
@@ -84,17 +84,17 @@ class TurtleCreator:
 
         # Package everything into a zip file
         path_to_zip_file: str = self._create_zip_from_all_ttls()
-        logging.info(f"Turtle files successfully packaged in {path_to_zip_file}")
+        logger.info(f"Turtle files successfully packaged in {path_to_zip_file}")
         return path_to_zip_file
 
     def _create_families(self) -> None:
-        logging.info("Creating RDF families turtle file.")
+        logger.info("Creating RDF families turtle file.")
 
         graph = get_empty_graph()
 
         with self.Session() as session:
             # Query all families
-            families: List[models.Family] = session.query(models.Family).all()
+            families: list[models.Family] = session.query(models.Family).all()
 
             for family in tqdm(families, desc="Creating families triples"):
                 family_entity: URIRef = namespaces.FAMILY_NS[str(family.id)]
@@ -128,7 +128,7 @@ class TurtleCreator:
 
     def _create_locations(self) -> None:
         # using type_material to extract locations
-        logging.info("Creating RDF location turtle file.")
+        logger.info("Creating RDF location turtle file.")
         graph = get_empty_graph()
         with self.Session() as session:
             locations = (
@@ -213,18 +213,18 @@ class TurtleCreator:
                     )
                 )
 
-        ttl_path = os.path.join(self.__ttls_folder, f"ipni_location.ttl")
+        ttl_path = os.path.join(self.__ttls_folder, "ipni_location.ttl")
         graph.serialize(ttl_path, format="turtle")
         del graph
 
     def _create_name_relations(self) -> None:
-        logging.info("Creating name relations file.")
+        logger.info("Creating name relations file.")
 
         graph = get_empty_graph()
 
         with self.Session() as session:
             # Query all name relations
-            name_relations: List[models.NameRelation] = session.query(
+            name_relations: list[models.NameRelation] = session.query(
                 models.NameRelation
             ).all()
 
@@ -254,7 +254,7 @@ class TurtleCreator:
         del graph
 
     def _create_names(self) -> None:
-        logging.info("Creating RDF names turtle file.")
+        logger.info("Creating RDF names turtle file.")
 
         with self.__engine.connect() as conn:
             # Query all names
@@ -270,14 +270,13 @@ class TurtleCreator:
                 file_counter += 1
                 graph = get_empty_graph()
                 for name in names:
-
                     name_entity: URIRef = namespaces.NAME_NS[str(name.id)]
                     # Add type declarations
                     graph.add(
                         triple=(
                             name_entity,
                             RDF.type,
-                            namespaces.NODE_NS[models.Name.__name__],
+                            namespaces.NODE_NS["Taxon"],
                         )
                     )
                     graph.add(
@@ -285,6 +284,13 @@ class TurtleCreator:
                             name_entity,
                             RDF.type,
                             namespaces.NODE_NS[BASIC_NODE_LABEL],
+                        )
+                    )
+                    graph.add(
+                        triple=(
+                            name_entity,
+                            namespaces.REL_NS["id"],
+                            Literal(name.id, datatype=XSD.string),
                         )
                     )
                     graph.add(
